@@ -842,85 +842,155 @@
         const STORAGE_KEY = 'jira_qa_practice_issues_v2';
         const PROJECTS_STORAGE_KEY = 'jira_qa_practice_projects_v2';
 
-        // 기본 샘플 프로젝트
+        // 기본 포트폴리오 프로젝트
         const DEFAULT_PROJECTS = [
             {
-                key: 'ALPHA',
-                name: '신작 RPG 프로젝트 QA',
-                description: '게임 클라이언트 & 전투 시스템 QA'
+                key: 'HS',
+                name: '하스스톤',
+                description: 'QA 보드'
             }
         ];
 
-        // 초기 샘플 QA 데이터 (실무 수준의 예시 티켓)
+        // 초기 고정 QA 데이터 (하스스톤 QA 이슈 및 영상 증적 링크 포함)
         const DEFAULT_ISSUES = [
             {
-                id: 'ALPHA-1',
-                project: 'ALPHA',
+                id: 'HS-6',
+                project: 'HS',
                 type: 'Bug',
-                summary: '[전투/스킬] 궁극기 시전 직후 캔슬 회피 입력 시 클라이언트가 강제 종료되는 현상',
-                description: `[사전 조건]\n- 빌드 버전: v1.0.4 (QA 서버)\n- 테스트 계정: 레벨 45 검사 클래스\n\n[재현 경로 (Steps to Reproduce)]\n1. 필드 사냥터 또는 훈련장 입장\n2. '천공 베기(R)' 궁극기 스킬 사용\n3. 스킬 선딜레이(0.3초 이내) 구간에 스페이스바(회피) 연타\n\n[기대 결과 (Expected Result)]\n- 궁극기 시전이 취소되고 회피 동작이 정상 실행되어야 함\n\n[실제 결과 (Actual Result)]\n- 애니메이션 충돌과 함께 Fatal Error 팝업 출력 후 클라이언트 강제 종료됨\n\n[재현 빈도]\n- 5/5 (100% 재현)`,
+                summary: "[하스스톤][PC Live] '현상 수배 전단'으로 발견한 카드 준비 시 전투의 함성 애니메이션이 재생되는 현상",
+                description: `[테스트 환경]\n빌드 : 하스스톤 버전 37.0.0.255130.254477\n브라우저 : Window 10\n디바이스 : PC\n-OS : Window 10 Pro (x64)\n-CPU : Intel® Core™ i5-7500 CPU @ 3.40GHz\n-메모리 : 16.0GB RAM\n-GPU : NVIDIA GeForce GTX 1050 2GB\n서버 : LIVE\n\n[테스트 정보]\n날짜 : 2026-10-21\n계정 : yyh1234/yyh1122@\nUID : 33424512\n\n[재현 절차]\n1. '현상 수배 전단' 카드 사용\n2. 전투의 함성 애니메이션을 가지고 있는 카드를 선택\n3. 선택한 카드를 준비\n4. 준비 시 전투의 함성 애니메이션 출력 확인\n5. 턴 종료 후 상대 턴 진행\n6. 내 턴이 돌아온 뒤 전 턴에 준비한 카드를 사용해 애니메이션 확인\n\n[오류 내용]\n'현상 수배 전단'으로 발견한 카드를 준비할 시 전투의 함성 애니메이션이 재생됨\n\n[기대 결과]\n전투의 함성 애니메이션 재생 없이 준비만 완료되어야 함\n\n[참고 사항]\n하스스톤의 준비 키워드는 실제로 카드를 내는 행위가 아니다.\n\n재현 빈도 : 5/5(100%)`,
                 status: 'TODO',
-                severity: 'Critical',
-                priority: 'Highest',
-                environment: 'Windows 11 / RTX 4060 / Build v1.0.4',
+                severity: 'Trivial',
+                priority: 'Lowest',
+                environment: '37.0.0.255130.254477',
                 assignee: '김개발 (클라이언트)',
                 reporter: 'QA 테스터 (나)',
-                labels: ['전투시스템', '크래시', '핫픽스'],
+                labels: ['전투시스템'],
                 attachments: [
-                    { name: 'skill_crash_repro.mp4', url: 'https://www.youtube.com' },
-                    { name: 'crash_dump_01.log', url: 'https://github.com' }
+                    {
+                        name: '현상수배전단_하수인_이펙트_오류',
+                        url: 'https://ryu-yongha.github.io/qa-yongha/Jira/mp4/wanted_poster_effect_issue.mp4'
+                    }
                 ],
-                createdAt: '2026-11-12 14:20',
-                comments: [
-                    { author: '김개발 (클라이언트)', text: '로그 확인했습니다. 애니메이션 몽타주 블렌딩 예외 처리 누락으로 보입니다. 오늘 오후 중 수정 빌드 반영하겠습니다.', time: '2026-11-12 15:05' }
-                ]
-            },
-            {
-                id: 'ALPHA-2',
-                project: 'ALPHA',
-                type: 'Bug',
-                summary: '[상점/결제] 보유 재화가 부족한 상태에서 패키지 구매 버튼 터치 시 안내 팝업 미출력 현상',
-                description: `[사전 조건]\n- 보유 다이아: 100개 (패키지 가격: 1,200 다이아)\n\n[재현 경로]\n1. 메인 로비 우측 상단 [상점] 진입\n2. '초보자 성장 패키지' 선택 후 [1,200 다이아 구매] 버튼 클릭\n\n[기대 결과]\n- '다이아가 부족합니다. 충전소로 이동하시겠습니까?' 안내 팝업 출력\n\n[실제 결과]\n- 버튼 클릭 효과음만 재생되고 아무런 팝업이나 안내 문구가 뜨지 않음\n\n[재현 빈도]\n- 5/5 (100%)`,
-                status: 'IN_PROGRESS',
-                severity: 'Major',
-                priority: 'High',
-                environment: 'iOS 18.1 / iPhone 15 Pro / Build v1.0.4',
-                assignee: '최아트 (UI/UX)',
-                reporter: 'QA 테스터 (나)',
-                labels: ['UI/UX', '상점', '결제'],
-                attachments: [
-                    { name: 'shop_no_popup.png', url: 'https://placehold.co/600x400' }
-                ],
-                createdAt: '2026-11-12 16:40',
+                createdAt: '2026-11-19 14:49',
                 comments: []
             },
             {
-                id: 'ALPHA-3',
-                project: 'ALPHA',
+                id: 'HS-5',
+                project: 'HS',
                 type: 'Bug',
-                summary: '[로컬라이징/UI] 일본어(JP) 설정 시 퀘스트 수락 버튼 텍스트가 프레임 밖으로 잘리는 현상',
-                description: `[사전 조건]\n- 환경설정 > 언어 설정을 '日本語(일본어)'로 변경\n\n[재현 경로]\n1. 시작 마을 NPC '카일'과 대화 진행\n2. 메인 퀘스트 수락 창 확인\n\n[기대 결과]\n- 버튼 영역 내부에 텍스트가 줄바꿈되거나 폰트 크기가 자동 조절되어 온전히 표시됨\n\n[실제 결과]\n- 'クエストを受諾する' 텍스트 좌우 끝부분이 버튼 박스 밖으로 삐져나옴\n\n[재현 빈도]\n- 5/5 (100%)`,
-                status: 'IN_QA',
-                severity: 'Minor',
-                priority: 'Medium',
-                environment: 'Android 15 / Galaxy S24 / Build v1.0.5',
-                assignee: '최아트 (UI/UX)',
+                summary: "[하스스톤][PC Live] '악마학 프로젝트' 카드 사용 후 재 접속 전까지 게임 정상 진행이 불가능해지는 현상",
+                description: `[테스트 환경]\n빌드 : 하스스톤 버전 37.0.0.255130.254477\n브라우저 : Window 10\n디바이스 : PC\n-OS : Window 10 Pro (x64)\n-CPU : Intel® Core™ i5-7500 CPU @ 3.40GHz\n-메모리 : 16.0GB RAM\n-GPU : NVIDIA GeForce GTX 1050 2GB\n서버 : LIVE\n\n[테스트 정보]\n날짜 : 2026-10-20\n계정 : yyh1234/yyh1122@\nUID : 33424512\n\n[재현 절차]\n1. '악마학 프로젝트' 카드 사용\n2. 패나 필드의 다른 카드를 이용한 플레이 시도\n3. 게임 강제 종료 후 재접속\n4. 정상적으로 플레이가 재개되는 것을 확인\n\n[오류 내용]\n'악마학 프로젝트' 카드의 효과 적용 이후 정상 게임 플레이가 불가능해지는 현상\n\n[기대 결과]\n'악마학 프로젝트' 카드 효과 적용 이후 게임 플레이 정상 진행\n\n[참고 사항]\n재현 빈도 : 5/5(100%)`,
+                status: 'TODO',
+                severity: 'Major',
+                priority: 'High',
+                environment: '37.0.0.255130.254477',
+                assignee: '김개발 (클라이언트)',
                 reporter: 'QA 테스터 (나)',
-                labels: ['로컬라이징', 'UI/UX'],
+                labels: ['전투시스템'],
                 attachments: [
-                    { name: 'jp_text_overflow.png', url: 'https://placehold.co/600x400' }
+                    {
+                        name: '악마학프로젝트_게임_진행불가_오류',
+                        url: 'https://ryu-yongha.github.io/qa-yongha/Jira/mp4/demonic_project_game_play_issue.mp4'
+                    }
                 ],
-                createdAt: '2026-11-13 09:15',
-                comments: [
-                    { author: '최아트 (UI/UX)', text: 'Auto-fit 텍스트 컴포넌트 적용 완료했습니다. QA 검증 부탁드립니다!', time: '2026-11-13 11:30' }
-                ]
+                createdAt: '2026-11-19 14:49',
+                comments: []
+            },
+            {
+                id: 'HS-4',
+                project: 'HS',
+                type: 'Bug',
+                summary: "[하스스톤][PC Live] '대부 카자쿠스' 카드가 제시하는 특정 선택지의 텍스트가 누락되는 현상",
+                description: `[테스트 환경]\n빌드 : 하스스톤 버전 37.0.0.255130.254477\n브라우저 : Window 10\n디바이스 : PC\n-OS : Window 10 Pro (x64)\n-CPU : Intel® Core™ i5-7500 CPU @ 3.40GHz\n-메모리 : 16.0GB RAM\n-GPU : NVIDIA GeForce GTX 1050 2GB\n서버 : LIVE\n\n[테스트 정보]\n날짜 : 2026-10-19\n계정 : yyh1234/yyh1122@\nUID : 33424512\n\n[재현 절차]\n1. '대부 카자쿠스'를 필드에 내기\n2. '대부 카자쿠스'의 효과로 발생하는 선택지 확인\n3. 특정 선택지에 효과 내용 텍스트가 누락된 것을 확인\n4. 텍스트가 누락된 선택지를 포함해 임의의 '재판'카드 제작\n5. 만들어진 '재판'카드의 텍스트 누락 확인\n6. '재판'카드 사용 후 효과 정상 발동 확인\n\n[오류 내용]\n'대부 카자쿠스'가 제시하는 특정 선택지 '파괴죄로 구금'의 제목과 효과 텍스트가 누락됨\n\n[기대 결과]\n'대부 카자쿠스'의 선택지 '파괴죄로 구금'의 이름과 효과 텍스트가 정상적으로 기입\n\n[참고 사항]\n1. '파괴죄로 구금' 선택지의 효과는 '모든 하수인이 다른 하수인을 공격합니다.'이다.\n2. 선택지는 총 9가지가 존재한다.\n\n재현 빈도 : 5/5(100%)`,
+                status: 'TODO',
+                severity: 'Minor',
+                priority: 'Low',
+                environment: '37.0.0.255130.254477',
+                assignee: '김개발 (클라이언트)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['전투시스템'],
+                attachments: [
+                    {
+                        name: '대부카자쿠스_선택지_누락_오류',
+                        url: 'https://ryu-yongha.github.io/qa-yongha/Jira/mp4/godfather_kazakus_text_issue.mp4'
+                    }
+                ],
+                createdAt: '2026-11-19 14:47',
+                comments: []
+            },
+            {
+                id: 'HS-3',
+                project: 'HS',
+                type: 'Bug',
+                summary: "[하스스톤][PC Live] 키워드가 제거된 '악성 공포물'의 복사본에 키워드가 부여되는 현상",
+                description: `[테스트 환경]\n빌드 : 하스스톤 버전 37.0.0.255130.254477\n브라우저 : Window 10\n디바이스 : PC\n-OS : Window 10 Pro (x64)\n-CPU : Intel® Core™ i5-7500 CPU @ 3.40GHz\n-메모리 : 16.0GB RAM\n-GPU : NVIDIA GeForce GTX 1050 2GB\n서버 : LIVE\n\n[테스트 정보]\n날짜 : 2026-10-16\n계정 : yyh1234/yyh1122@\nUID : 33424512\n\n[재현 절차]\n1. '악성 공포물' 카드의 환생 제거\n2. 비교를 위해 정상적인 '악성 공포물' 카드 필드에 추가 배치\n3. 턴 종료\n4. 환생이 제거된 '악성 공포물'과 정상적인 '악성 공포물'의 복사 효과 발생 확인\n5. 환생이 제거된 '악성 공포물'의 복사본에도 환생이 부여되어 있음을 확인\n\n[오류 내용]\n환생이 제거된 '악성 공포물'의 복사본에도 환생이 부여되어 복사됨\n\n[기대 결과]\n환생이 제거된 '악성 공포물'의 복사본과 정상적인 '악성 공포물'의 복사본이 필드에 생성\n\n[참고 사항]\n'악성 공포물'의 복사 효과는 본체의 능력치, 키워드를 동일하게 복사해야 한다.\n\n재현 빈도 : 5/5(100%)`,
+                status: 'TODO',
+                severity: 'Major',
+                priority: 'High',
+                environment: '37.0.0.255130.254477',
+                assignee: '김개발 (클라이언트)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['전투시스템'],
+                attachments: [
+                    {
+                        name: '악성공포물_복사_오류',
+                        url: 'https://ryu-yongha.github.io/qa-yongha/Jira/mp4/malignant_horror_copy_issue.mp4'
+                    }
+                ],
+                createdAt: '2026-11-19 14:44',
+                comments: []
+            },
+            {
+                id: 'HS-2',
+                project: 'HS',
+                type: 'Bug',
+                summary: "[하스스톤][PC Live] '수중 동물 변신' 카드의 효과 적용 오류",
+                description: `[테스트 환경]\n빌드 : 하스스톤 버전 37.0.0.255130.254477\n브라우저 : Window 10\n디바이스 : PC\n-OS : Window 10 Pro (x64)\n-CPU : Intel® Core™ i5-7500 CPU @ 3.40GHz\n-메모리 : 16.0GB RAM\n-GPU : NVIDIA GeForce GTX 1050 2GB\n서버 : LIVE\n\n[테스트 정보]\n날짜 : 2026-10-26\n계정 : yyh1234/yyh1122@\nUID : 33424512\n\n[재현 절차]\n1. 덱의 카드, 보유 마나 모두 소진\n2. 덱에 카드가 없는 상태에서 '수중 동물 변신'카드 사용\n3. 탈진 피해를 입는 것을 확인\n4. '수중 동물 변신' 카드 추가 사용\n5. 추가 탈진 피해를 입는 것을 확인\n\n[오류 내용]\n'수중 동물 변신' 카드의 카드를 뽑는 효과가 적용되어 탈진 피해를 입음.\n\n[기대 결과]\n'수중 동물 변신' 카드는 사용 되나 아무 일도 일어나지 않음\n\n[참고 사항]\n'수중 동물 변신' 카드의 카드를 뽑는 효과는\n1. 덱에 인양할 카드가 있어야 함\n2. 그 카드를 낼 마나가 있어야 함\n위의 두 가지 조건이 만족 되었을 때만 가능한 조건부 효과이다.\n\n재현 빈도 : 5/5(100%)`,
+                status: 'TODO',
+                severity: 'Minor',
+                priority: 'Low',
+                environment: '37.0.0.255130.254477',
+                assignee: '김개발 (클라이언트)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['전투시스템'],
+                attachments: [
+                    {
+                        name: '수중동물변신_효과_오류',
+                        url: 'https://ryu-yongha.github.io/qa-yongha/Jira/mp4/aquatic_form_effect_issue.mp4'
+                    }
+                ],
+                createdAt: '2026-11-19 14:43',
+                comments: []
+            },
+            {
+                id: 'HS-1',
+                project: 'HS',
+                type: 'Bug',
+                summary: "[하스스톤][PC Live] 풍수사 카드의 '매 턴마다 내가 처음으로~' 관련 효과 판정에 오류가 발생하는 현상",
+                description: `[테스트 환경]\n빌드 : 하스스톤 Live버전 37.0.0.255130.254477\n브라우저 : Window 10\n디바이스 : PC\n-OS : Window 10 Pro (x64)\n-CPU : Intel® Core™ i5-7500 CPU @ 3.40GHz\n-메모리 : 16.0GB RAM\n-GPU : NVIDIA GeForce GTX 1050 2GB\n서버 : LIVE\n\n[테스트 정보]\n날짜 : 2026-10-26\n계정 : yyh1234/yyh1122@\nUID : 33424512\n\n[재현 절차]\n1. '풍수사' 카드 필드에 내기\n2. '대마법사 바르고스' 카드 필드에 내기\n3. 상대방에게 피해를 주는 주문 사용\n4. '풍수사' 공격력 증가 확인\n5. 턴 종료 버튼 입력\n6. '대마법사 바르고스' 효과로 주문 재사용\n7. '풍수사' 공격력 증가 확인\n8. 상대 턴 진행\n9. 내 턴 돌아온 뒤 피해를 주는 주문 사용\n10. '풍수사' 공격력 증가하지 않는 것 확인\n\n[오류 내용]\n1. '턴 종료 효과'가 끝나지 않아 '새 턴'이 오지 않았음에도 '풍수사'의 공격력이 한 번 더 증가함.\n2. 상대 턴을 지나 내 턴이 돌아왔지만, 이번에는 효과가 발동하지 않음.\n\n[기대 결과]\n1. 턴 종료 시 '풍수사' 공격력 증가 없음\n2. 다음 내 턴에 주문 사용 시 '풍수사' 공격력 정상 증가\n\n[참고 사항]\n1. 하스스톤의 '매 턴마다 내가 처음으로~'의 효과는 '새 턴'으로 넘어가야 발동 기회가 다시 생긴다.\n2. '턴 종료 효과'를 처리하는 도중에는 '새 턴'으로 넘어간 판정이 아니다.\n\n재현 빈도 : 5/5(100%)`,
+                status: 'TODO',
+                severity: 'Minor',
+                priority: 'Low',
+                environment: '37.0.0.255130.254477',
+                assignee: '김개발 (클라이언트)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['전투시스템'],
+                attachments: [
+                    {
+                        name: '풍수사_공격력_증가_오류',
+                        url: 'https://ryu-yongha.github.io/qa-yongha/Jira/mp4/raincaller_atk_issue.mp4'
+                    }
+                ],
+                createdAt: '2026-11-19 13:55',
+                comments: []
             }
         ];
 
         // 애플리케이션 상태 변수
         let projects = [];
         let issues = [];
-        let currentProjectKey = 'ALPHA';
+        let currentProjectKey = 'HS';
         let currentView = 'board';
         let selectedIssueId = null;
         let draggedIssueId = null;
@@ -969,7 +1039,7 @@
                 console.error('로컬 스토리지 로드 오류:', e);
                 projects = JSON.parse(JSON.stringify(DEFAULT_PROJECTS));
                 issues = JSON.parse(JSON.stringify(DEFAULT_ISSUES));
-                currentProjectKey = 'ALPHA';
+                currentProjectKey = 'HS';
             }
         }
 
@@ -1824,16 +1894,16 @@
 
         function confirmResetData() {
             openConfirmDialog(
-                '샘플 데이터 초기화',
-                '직접 만든 프로젝트와 이슈들을 모두 지우고 초기 샘플 데이터 상태로 되돌리시겠습니까?',
+                '기본 데이터 초기화',
+                '직접 수정/추가한 내용을 지우고 초기 하스스톤(HS) 포트폴리오 데이터 상태로 되돌리시겠습니까?',
                 () => {
                     projects = JSON.parse(JSON.stringify(DEFAULT_PROJECTS));
                     issues = JSON.parse(JSON.stringify(DEFAULT_ISSUES));
-                    currentProjectKey = 'ALPHA';
+                    currentProjectKey = 'HS';
                     saveData();
                     syncProjectSelectors();
                     renderAll();
-                    showToast('초기 샘플 데이터로 복원되었습니다.');
+                    showToast('초기 하스스톤(HS) 데이터로 복원되었습니다.');
                 }
             );
         }
