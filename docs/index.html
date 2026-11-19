@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jira QA 실습 시뮬레이터 - 이슈 등록 및 버그 트래킹</title>
+    <!-- Tailwind CSS 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 아이콘 로드 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Pretendard 폰트 로드 -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', 'sans-serif'],
+                    },
+                    colors: {
+                        jira: {
+                            blue: '#0052CC',
+                            blueHover: '#0065FF',
+                            blueLight: '#DEEBFF',
+                            dark: '#172B4D',
+                            subtle: '#5E6C84',
+                            bg: '#F4F5F7',
+                            border: '#DFE1E6',
+                            red: '#DE350B',
+                            green: '#00875A',
+                            yellow: '#FF991F',
+                            purple: '#6554C0'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* 커스텀 스크롤바 및 Jira 스타일 디테일 */
+        body {
+            color: #172B4D;
+            background-color: #FFFFFF;
+            overflow-x: hidden;
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F4F5F7;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #C1C7D0;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #A5ADBA;
+        }
+        .kanban-col {
+            min-height: calc(100vh - 230px);
+        }
+        .issue-card {
+            transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+        }
+        .issue-card:hover {
+            background-color: #FAFBFC;
+            box-shadow: 0 4px 8px -2px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.31);
+        }
+        .dragging {
+            opacity: 0.5;
+            transform: rotate(2deg);
+        }
+        .drag-over {
+            background-color: #DEEBFF !important;
+            border: 2px dashed #0052CC !important;
+        }
+        /* 모달 애니메이션 */
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(-10px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .modal-animate {
+            animation: modalFadeIn 0.2s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen select-none md:select-auto">
+
+    <!-- 상단 글로벌 네비게이션 바 (Atlassian Header) -->
+    <header class="h-14 bg-white border-b border-jira-border px-4 flex items-center justify-between sticky top-0 z-30 shrink-0">
+        <div class="flex items-center space-x-3 md:space-x-5">
+            <!-- 모바일 메뉴 토글 버튼 -->
+            <button id="mobileMenuBtn" class="md:hidden p-2 text-jira-subtle hover:bg-jira-bg rounded">
+                <i class="fas fa-bars text-lg"></i>
+            </button>
+
+            <!-- Jira 로고 영역 -->
+            <div class="flex items-center space-x-2 cursor-pointer" onclick="switchView('board')">
+                <div class="w-7 h-7 bg-jira-blue rounded flex items-center justify-center text-white font-bold shadow-sm">
+                    <i class="fab fa-jira text-base"></i>
+                </div>
+                <span class="font-bold text-lg tracking-tight text-jira-dark">Jira <span class="text-xs font-medium bg-jira-blueLight text-jira-blue px-1.5 py-0.5 rounded ml-1">QA 실습</span></span>
+            </div>
+
+            <!-- 프로젝트 선택 드롭다운 (데스크톱) -->
+            <div class="hidden sm:flex items-center space-x-1 text-sm font-medium text-jira-dark bg-jira-bg hover:bg-gray-200 px-3 py-1.5 rounded cursor-pointer transition">
+                <span class="w-2 h-2 rounded-full bg-jira-green mr-1.5"></span>
+                <select id="globalProjectFilter" onchange="handleProjectChange(this.value)" class="bg-transparent focus:outline-none cursor-pointer font-semibold text-jira-dark max-w-[220px] truncate">
+                    <!-- JS로 동적 렌더링 -->
+                </select>
+                <button onclick="openProjectModal()" title="새 프로젝트 만들기" class="ml-1.5 text-jira-blue hover:bg-blue-100 px-1.5 py-0.5 rounded text-xs font-bold transition">
+                    <i class="fas fa-folder-plus"></i>
+                </button>
+            </div>
+
+            <!-- 핵심 기능: 만들기(Create) 버튼 -->
+            <button onclick="openCreateModal()" class="bg-jira-blue hover:bg-jira-blueHover text-white font-semibold text-sm px-3.5 py-1.5 rounded shadow-sm transition flex items-center space-x-1.5 active:scale-95">
+                <i class="fas fa-plus text-xs"></i>
+                <span>만들기</span>
+            </button>
+        </div>
+
+        <!-- 우측 유틸리티 영역 -->
+        <div class="flex items-center space-x-1.5 md:space-x-2.5">
+            <!-- JSON 백업 내보내기 (다른 PC 이동용) -->
+            <button onclick="exportBackupJSON()" title="다른 PC에서 이어서 작업할 수 있도록 전체 데이터를 JSON 파일로 저장" class="flex items-center space-x-1 text-xs font-medium text-jira-blue bg-jira-blueLight hover:bg-blue-200 px-2.5 py-1.5 rounded transition">
+                <i class="fas fa-download"></i>
+                <span class="hidden md:inline">백업 저장</span>
+            </button>
+
+            <!-- JSON 백업 불러오기 -->
+            <label title="저장해둔 JSON 백업 파일 불러오기" class="cursor-pointer flex items-center space-x-1 text-xs font-medium text-jira-dark bg-jira-bg hover:bg-gray-200 px-2.5 py-1.5 rounded border border-jira-border transition">
+                <i class="fas fa-upload"></i>
+                <span class="hidden md:inline">불러오기</span>
+                <input type="file" id="importJsonInput" accept=".json" class="hidden" onchange="importBackupJSON(event)">
+            </label>
+
+            <!-- 데이터 내보내기 버튼 -->
+            <button onclick="exportIssuesCSV()" title="작성한 이슈 목록 CSV 복사" class="hidden lg:flex items-center space-x-1.5 text-xs font-medium text-jira-subtle hover:text-jira-dark hover:bg-jira-bg px-2.5 py-1.5 rounded border border-jira-border transition">
+                <i class="fas fa-file-export"></i>
+                <span>CSV 복사</span>
+            </button>
+
+            <!-- 데이터 초기화 버튼 -->
+            <button onclick="confirmResetData()" title="샘플 데이터로 초기화" class="flex items-center space-x-1 text-xs font-medium text-jira-subtle hover:text-jira-red hover:bg-red-50 px-2 py-1.5 rounded border border-jira-border transition">
+                <i class="fas fa-rotate-left"></i>
+                <span class="hidden xl:inline">초기화</span>
+            </button>
+        </div>
+
+        <!-- 우측 유틸리티 영역 -->
+        <div class="flex items-center space-x-2 md:space-x-3">
+            <!-- 데이터 내보내기 버튼 -->
+            <button onclick="exportIssuesCSV()" title="작성한 이슈 목록 CSV 복사" class="hidden sm:flex items-center space-x-1.5 text-xs font-medium text-jira-subtle hover:text-jira-dark hover:bg-jira-bg px-2.5 py-1.5 rounded border border-jira-border transition">
+                <i class="fas fa-file-export"></i>
+                <span>CSV 복사</span>
+            </button>
+
+            <!-- 데이터 초기화 버튼 -->
+            <button onclick="confirmResetData()" title="샘플 데이터로 초기화" class="flex items-center space-x-1.5 text-xs font-medium text-jira-subtle hover:text-jira-red hover:bg-red-50 px-2.5 py-1.5 rounded border border-jira-border transition">
+                <i class="fas fa-rotate-left"></i>
+                <span class="hidden sm:inline">초기화</span>
+            </button>
+
+            <!-- 사용자 프로필 뱃지 -->
+            <div class="flex items-center space-x-2 pl-2 border-l border-jira-border">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-jira-blue to-blue-400 text-white font-bold text-xs flex items-center justify-center shadow-sm" title="현재 접속자: QA 테스터 (나)">
+                    QA
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨텐츠 레이아웃 -->
+    <div class="flex flex-1 overflow-hidden relative">
+        
+        <!-- 좌측 사이드바 (Sidebar) -->
+        <aside id="sidebar" class="w-60 bg-jira-bg border-r border-jira-border flex flex-col justify-between shrink-0 fixed md:static inset-y-0 left-0 z-20 transform -translate-x-full md:translate-x-0 transition-transform duration-200 pt-14 md:pt-0">
+            <div class="p-4">
+                <!-- 프로젝트 헤더 & 관리 버튼 -->
+                <div class="flex items-center justify-between mb-4 px-1">
+                    <div class="flex items-center space-x-2.5 overflow-hidden">
+                        <div class="w-9 h-9 rounded bg-indigo-600 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
+                            <i class="fas fa-gamepad"></i>
+                        </div>
+                        <div class="overflow-hidden">
+                            <div id="sidebarProjectKey" class="font-bold text-sm text-jira-dark truncate">PROJECT-ALPHA</div>
+                            <div id="sidebarProjectName" class="text-xs text-jira-subtle truncate">신작 RPG 프로젝트 QA</div>
+                        </div>
+                    </div>
+                    <button id="editProjectBtn" onclick="openEditCurrentProjectModal()" title="현재 프로젝트 설정/삭제" class="text-jira-subtle hover:text-jira-dark p-1.5 rounded hover:bg-gray-200 transition shrink-0">
+                        <i class="fas fa-cog text-xs"></i>
+                    </button>
+                </div>
+
+                <!-- 새 프로젝트 만들기 버튼 -->
+                <button onclick="openProjectModal()" class="w-full mb-5 py-1.5 px-3 bg-white hover:bg-blue-50 text-jira-blue border border-jira-border hover:border-jira-blue rounded text-xs font-bold flex items-center justify-center space-x-1.5 shadow-sm transition">
+                    <i class="fas fa-plus"></i>
+                    <span>새 프로젝트 만들기</span>
+                </button>
+
+                <!-- 네비게이션 메뉴 -->
+                <div class="space-y-1">
+                    <div class="text-[11px] font-bold text-jira-subtle uppercase tracking-wider px-3 mb-2">계획 및 트래킹</div>
+                    
+                    <button id="nav-board" onclick="switchView('board')" class="nav-item w-full flex items-center space-x-3 px-3 py-2 rounded text-sm font-medium bg-jira-blueLight text-jira-blue transition">
+                        <i class="fas fa-columns w-4 text-center"></i>
+                        <span>활성 스프린트 (보드)</span>
+                    </button>
+
+                    <button id="nav-list" onclick="switchView('list')" class="nav-item w-full flex items-center space-x-3 px-3 py-2 rounded text-sm font-medium text-jira-dark hover:bg-gray-200 transition">
+                        <i class="fas fa-list-ul w-4 text-center"></i>
+                        <span>모든 이슈 목록</span>
+                        <span id="sidebarIssueCount" class="ml-auto text-xs bg-gray-200 text-jira-dark px-2 py-0.5 rounded-full font-semibold">0</span>
+                    </button>
+
+                    <div class="pt-4 mt-4 border-t border-jira-border">
+                        <div class="text-[11px] font-bold text-jira-subtle uppercase tracking-wider px-3 mb-2">QA 학습 자료</div>
+                        <button id="nav-guide" onclick="switchView('guide')" class="nav-item w-full flex items-center space-x-3 px-3 py-2 rounded text-sm font-medium text-jira-dark hover:bg-gray-200 transition">
+                            <i class="fas fa-book-open w-4 text-center text-jira-green"></i>
+                            <span>버그 리포트 작성 가이드</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 사이드바 하단 팁 박스 -->
+            <div class="p-4 m-3 bg-white rounded-lg border border-jira-border shadow-sm">
+                <div class="flex items-center space-x-1.5 text-xs font-bold text-jira-blue mb-1">
+                    <i class="fas fa-lightbulb"></i>
+                    <span>QA 연습 팁</span>
+                </div>
+                <p class="text-xs text-jira-subtle leading-relaxed">
+                    상단의 <strong>[만들기]</strong> 버튼을 누른 후 설명란의 <strong>[버그 양식 삽입]</strong>을 클릭하면 실무 표준 템플릿을 바로 연습할 수 있습니다.
+                </p>
+            </div>
+        </aside>
+
+        <!-- 모바일 사이드바 백드롭 -->
+        <div id="sidebarBackdrop" onclick="toggleMobileSidebar()" class="fixed inset-0 bg-black bg-opacity-40 z-10 hidden md:hidden"></div>
+
+        <!-- 우측 메인 작업 영역 -->
+        <main class="flex-1 flex flex-col bg-white overflow-hidden">
+            
+            <!-- 상단 브레드크럼 및 필터 툴바 -->
+            <div id="toolbarArea" class="px-6 pt-5 pb-3 border-b border-jira-border bg-white shrink-0">
+                <div class="text-xs text-jira-subtle mb-1 flex items-center space-x-1.5">
+                    <span>프로젝트</span>
+                    <span>/</span>
+                    <span id="breadcrumbProject">PROJECT-ALPHA</span>
+                    <span>/</span>
+                    <span id="breadcrumbView" class="font-medium text-jira-dark">칸반 보드</span>
+                </div>
+                
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-1">
+                    <h1 id="pageTitle" class="text-xl md:text-2xl font-bold text-jira-dark">ALPHA 스프린트 1 보드</h1>
+                    
+                    <!-- 검색 및 필터 컨트롤 -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="relative">
+                            <input type="text" id="searchInput" oninput="renderAll()" placeholder="이슈 키, 요약 검색..." class="pl-8 pr-3 py-1.5 text-sm border border-jira-border rounded bg-jira-bg focus:bg-white focus:border-jira-blue focus:outline-none w-44 sm:w-56 transition">
+                            <i class="fas fa-search absolute left-2.5 top-2.5 text-xs text-jira-subtle"></i>
+                        </div>
+
+                        <select id="typeFilter" onchange="renderAll()" class="text-xs font-medium text-jira-dark bg-jira-bg hover:bg-gray-200 border border-jira-border rounded px-2.5 py-1.5 focus:outline-none cursor-pointer">
+                            <option value="ALL">유형: 전체</option>
+                            <option value="Bug">버그 (Bug)</option>
+                            <option value="Task">작업 (Task)</option>
+                            <option value="Story">스토리 (Story)</option>
+                            <option value="Improvement">개선 (Improvement)</option>
+                        </select>
+
+                        <select id="priorityFilter" onchange="renderAll()" class="text-xs font-medium text-jira-dark bg-jira-bg hover:bg-gray-200 border border-jira-border rounded px-2.5 py-1.5 focus:outline-none cursor-pointer">
+                            <option value="ALL">우선순위: 전체</option>
+                            <option value="Highest">Highest</option>
+                            <option value="High">High</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Low">Low</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 뷰 1: 칸반 보드 (Kanban Board) -->
+            <div id="view-board" class="flex-1 overflow-x-auto overflow-y-hidden p-4 md:p-6 bg-white">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 h-full min-w-[280px] md:min-w-[960px]">
+                    
+                    <!-- 컬럼 1: 할 일 (TO DO) -->
+                    <div class="bg-jira-bg rounded-lg p-2.5 flex flex-col max-h-full border border-transparent" 
+                         ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" ondrop="dropIssue(event, 'TODO')">
+                        <div class="flex items-center justify-between px-2 py-1.5 mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs font-bold text-jira-subtle uppercase tracking-wide">할 일 (TO DO)</span>
+                                <span id="count-TODO" class="text-xs font-bold bg-gray-200 text-jira-dark px-2 py-0.5 rounded-full">0</span>
+                            </div>
+                        </div>
+                        <div id="col-TODO" class="kanban-col flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
+                    </div>
+
+                    <!-- 컬럼 2: 진행 중 (IN PROGRESS) -->
+                    <div class="bg-jira-bg rounded-lg p-2.5 flex flex-col max-h-full border border-transparent"
+                         ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" ondrop="dropIssue(event, 'IN_PROGRESS')">
+                        <div class="flex items-center justify-between px-2 py-1.5 mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs font-bold text-jira-blue uppercase tracking-wide">진행 중 (IN PROGRESS)</span>
+                                <span id="count-IN_PROGRESS" class="text-xs font-bold bg-jira-blueLight text-jira-blue px-2 py-0.5 rounded-full">0</span>
+                            </div>
+                        </div>
+                        <div id="col-IN_PROGRESS" class="kanban-col flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
+                    </div>
+
+                    <!-- 컬럼 3: QA 검증 대기 (IN QA) -->
+                    <div class="bg-jira-bg rounded-lg p-2.5 flex flex-col max-h-full border border-transparent"
+                         ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" ondrop="dropIssue(event, 'IN_QA')">
+                        <div class="flex items-center justify-between px-2 py-1.5 mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs font-bold text-purple-700 uppercase tracking-wide">검증 대기 (IN REVIEW)</span>
+                                <span id="count-IN_QA" class="text-xs font-bold bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full">0</span>
+                            </div>
+                        </div>
+                        <div id="col-IN_QA" class="kanban-col flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
+                    </div>
+
+                    <!-- 컬럼 4: 완료 (DONE) -->
+                    <div class="bg-jira-bg rounded-lg p-2.5 flex flex-col max-h-full border border-transparent"
+                         ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" ondrop="dropIssue(event, 'DONE')">
+                        <div class="flex items-center justify-between px-2 py-1.5 mb-2">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs font-bold text-jira-green uppercase tracking-wide">완료 (DONE)</span>
+                                <span id="count-DONE" class="text-xs font-bold bg-green-100 text-jira-green px-2 py-0.5 rounded-full">0</span>
+                            </div>
+                        </div>
+                        <div id="col-DONE" class="kanban-col flex-1 overflow-y-auto space-y-2.5 pr-1"></div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- 뷰 2: 모든 이슈 목록 (Issues Table View) -->
+            <div id="view-list" class="hidden flex-1 overflow-y-auto p-4 md:p-6 bg-white">
+                <div class="border border-jira-border rounded-lg overflow-hidden shadow-sm">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-jira-bg border-b border-jira-border text-xs font-bold text-jira-subtle uppercase">
+                                    <th class="py-3 px-4 w-12">유형</th>
+                                    <th class="py-3 px-4 w-28">키</th>
+                                    <th class="py-3 px-4">요약 (Summary)</th>
+                                    <th class="py-3 px-4 w-28">상태</th>
+                                    <th class="py-3 px-4 w-28">심각도</th>
+                                    <th class="py-3 px-4 w-28">우선순위</th>
+                                    <th class="py-3 px-4 w-32">담당자</th>
+                                    <th class="py-3 px-4 w-28">생성일</th>
+                                </tr>
+                            </thead>
+                            <tbody id="issueTableBody" class="divide-y divide-jira-border text-sm">
+                                <!-- JS로 동적 렌더링 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 뷰 3: QA 버그 리포트 작성 가이드 (QA Guide) -->
+            <div id="view-guide" class="hidden flex-1 overflow-y-auto p-4 md:p-8 bg-jira-bg">
+                <div class="max-w-4xl mx-auto space-y-6">
+                    <div class="bg-white p-6 md:p-8 rounded-xl border border-jira-border shadow-sm">
+                        <div class="flex items-center space-x-3 mb-4">
+                            <span class="p-2.5 bg-jira-blueLight text-jira-blue rounded-lg">
+                                <i class="fas fa-clipboard-check text-xl"></i>
+                            </span>
+                            <div>
+                                <h2 class="text-xl font-bold text-jira-dark">실무 QA Jira 버그 리포트 작성 핵심 가이드</h2>
+                                <p class="text-sm text-jira-subtle">개발자가 한 번에 이해하고 재현할 수 있는 좋은 티켓 작성법</p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                            <div class="p-4 rounded-lg bg-blue-50 border border-blue-100">
+                                <h3 class="font-bold text-sm text-jira-blue mb-2"><i class="fas fa-heading mr-1.5"></i>1. 명확한 요약 (Summary) 규칙</h3>
+                                <p class="text-xs text-jira-dark leading-relaxed mb-2">
+                                    <strong>[카테고리/위치] + 무엇을 할 때 + 어떤 문제가 발생하는지</strong> 한 문장으로 요약합니다.
+                                </p>
+                                <div class="text-xs bg-white p-2.5 rounded border border-blue-200 space-y-1">
+                                    <div class="text-jira-red"><i class="fas fa-times mr-1"></i>나쁜 예: 상점 버튼이 안 눌려요</div>
+                                    <div class="text-jira-green font-medium"><i class="fas fa-check mr-1"></i>좋은 예: [로비/상점] 골드 부족 상태에서 패키지 구매 버튼 터치 시 무반응 현상</div>
+                                </div>
+                            </div>
+
+                            <div class="p-4 rounded-lg bg-amber-50 border border-amber-100">
+                                <h3 class="font-bold text-sm text-amber-800 mb-2"><i class="fas fa-exclamation-triangle mr-1.5"></i>2. 심각도(Severity) vs 우선순위(Priority)</h3>
+                                <ul class="text-xs text-jira-dark space-y-1.5 leading-relaxed">
+                                    <li><strong>심각도 (QA 기준):</strong> 버그가 시스템/게임에 미치는 기술적 타격 (예: 크래시, 데이터 유실 = Critical)</li>
+                                    <li><strong>우선순위 (비즈니스 기준):</strong> 수정해야 하는 시급성 (예: 오탈자라도 메인 타이틀 로고 오타면 Priority는 Highest)</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <h3 class="font-bold text-base text-jira-dark mb-3">3. 표준 버그 리포트 본문 구성 (5대 필수 요소)</h3>
+                            <div class="bg-gray-900 text-gray-100 p-4 rounded-lg text-xs font-mono leading-relaxed space-y-2">
+                                <p><span class="text-blue-400 font-bold">[사전 조건 / 환경]</span> 빌드 v1.0.4 / Windows 11 / 튜토리얼 완료 계정</p>
+                                <p><span class="text-blue-400 font-bold">[재현 경로 (Steps to Reproduce)]</span><br>
+                                1. 메인 로비 우측 상단 [인벤토리] 아이콘 클릭<br>
+                                2. '회복 포션' 아이템 선택 후 [분해] 버튼 클릭<br>
+                                3. 수량 조절 슬라이더를 최대로 드래그 후 확인 클릭</p>
+                                <p><span class="text-green-400 font-bold">[기대 결과 (Expected Result)]</span> 아이템이 정상 분해되고 골드가 지급되어야 함</p>
+                                <p><span class="text-red-400 font-bold">[실제 결과 (Actual Result)]</span> 팝업이 닫히지 않으며 'Error Code: 502' 노출 후 조작 불가</p>
+                                <p><span class="text-yellow-400 font-bold">[재현 빈도]</span> 5/5 (100% 재현)</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6 flex justify-end">
+                            <button onclick="openCreateModal(true)" class="bg-jira-blue hover:bg-jira-blueHover text-white text-sm font-semibold px-4 py-2 rounded shadow transition">
+                                <i class="fas fa-pen mr-1.5"></i>지금 양식 불러와서 직접 등록해보기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 모달 1: Jira 이슈 만들기/수정 모달 (Create/Edit Issue Modal) -->
+    <!-- ===================================================================== -->
+    <div id="createModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 z-50 hidden flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col modal-animate overflow-hidden">
+            
+            <!-- 모달 헤더 -->
+            <div class="px-6 py-4 border-b border-jira-border flex items-center justify-between bg-white shrink-0">
+                <h2 id="createModalTitle" class="text-lg font-bold text-jira-dark">이슈 만들기</h2>
+                <div class="flex items-center space-x-2">
+                    <span class="text-xs text-jira-subtle"><span class="text-jira-red">*</span> 표시는 필수 입력 항목입니다</span>
+                    <button onclick="closeCreateModal()" class="text-jira-subtle hover:text-jira-dark p-1.5 rounded hover:bg-jira-bg transition">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 모달 본문 (스크롤 영역) -->
+            <form id="createIssueForm" onsubmit="handleCreateSubmit(event)" class="flex-1 overflow-y-auto p-6 space-y-5 text-sm">
+                
+                <!-- 수정 시 어떤 이슈를 고치고 있는지 기억하는 히든 필드 -->
+                <input type="hidden" id="editingIssueId" value="">
+
+                <!-- 프로젝트 & 이슈 유형 (2열) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pb-4 border-b border-jira-border">
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">프로젝트 <span class="text-jira-red">*</span></label>
+                        <select id="formProject" required class="w-full border border-jira-border rounded px-3 py-2 bg-jira-bg focus:bg-white focus:border-jira-blue focus:outline-none font-medium text-jira-dark">
+                            <!-- JS로 동적 렌더링 -->
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">이슈 유형 <span class="text-jira-red">*</span></label>
+                        <select id="formType" required class="w-full border border-jira-border rounded px-3 py-2 bg-jira-bg focus:bg-white focus:border-jira-blue focus:outline-none font-medium text-jira-dark">
+                            <option value="Bug">🔴 버그 (Bug) - 결함 및 오류 보고</option>
+                            <option value="Task">🔵 작업 (Task) - 테스트 케이스 작성 등</option>
+                            <option value="Story">🟢 스토리 (Story) - 신규 기능 요구사항</option>
+                            <option value="Improvement">🟣 개선 (Improvement) - UX/성능 개선 건의</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 요약 (Summary) -->
+                <div>
+                    <label class="block text-xs font-bold text-jira-subtle mb-1.5">요약 (Summary) <span class="text-jira-red">*</span></label>
+                    <input type="text" id="formSummary" required placeholder="예: [전투/스킬] 보스 몬스터 광폭화 패턴 중 회피기 사용 시 캐릭터가 맵 밖으로 이탈하는 현상" 
+                           class="w-full border border-jira-border rounded px-3 py-2 focus:border-jira-blue focus:ring-2 focus:ring-blue-100 focus:outline-none text-jira-dark font-medium">
+                </div>
+
+                <!-- 설명 (Description) + QA 빠른 템플릿 도구 모음 -->
+                <div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                        <label class="text-xs font-bold text-jira-subtle">설명 (Description)</label>
+                        
+                        <!-- QA 퀵 템플릿 버튼 그룹 -->
+                        <div class="flex flex-wrap items-center gap-1.5">
+                            <button type="button" onclick="insertTemplate('bug')" class="text-xs bg-jira-blueLight hover:bg-blue-200 text-jira-blue font-semibold px-2.5 py-1 rounded transition flex items-center">
+                                <i class="fas fa-magic mr-1"></i>버그 리포트 표준 양식 삽입
+                            </button>
+                            <button type="button" onclick="insertTemplate('ui')" class="text-xs bg-gray-100 hover:bg-gray-200 text-jira-dark font-medium px-2.5 py-1 rounded border border-jira-border transition">
+                                + UI/오탈자 양식
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 모의 리치 텍스트 툴바 -->
+                    <div class="border border-jira-border rounded-t bg-jira-bg px-3 py-1.5 flex items-center space-x-3 text-jira-subtle text-xs">
+                        <span class="font-bold">T</span>
+                        <i class="fas fa-bold"></i>
+                        <i class="fas fa-italic"></i>
+                        <i class="fas fa-list-ol"></i>
+                        <i class="fas fa-list-ul"></i>
+                        <i class="fas fa-code"></i>
+                        <span class="text-[11px] text-jira-subtle ml-auto">재현 경로는 번호(1, 2, 3...)로 명확히 구분해 주세요</span>
+                    </div>
+                    <textarea id="formDescription" rows="8" placeholder="버그의 사전 조건, 재현 경로, 기대 결과, 실제 결과, 재현 빈도를 상세히 작성하세요." 
+                              class="w-full border-x border-b border-jira-border rounded-b p-3 focus:border-jira-blue focus:outline-none text-jira-dark leading-relaxed font-sans"></textarea>
+                </div>
+
+                <!-- QA 핵심 필드 그리드 (심각도, 우선순위, 환경, 담당자) -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-jira-bg p-4 rounded-lg border border-jira-border">
+                    
+                    <!-- 심각도 (Severity - QA 전용) -->
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">심각도 (Severity - QA 기준)</label>
+                        <select id="formSeverity" class="w-full border border-jira-border rounded px-3 py-2 bg-white focus:border-jira-blue focus:outline-none text-jira-dark">
+                            <option value="Blocker">Blocker (차단 - 테스트 진행 불가)</option>
+                            <option value="Critical">Critical (치명적 - 크래시, 데이터 유실)</option>
+                            <option value="Major" selected>Major (주요 - 핵심 기능 오작동)</option>
+                            <option value="Minor">Minor (경미 - 우회 가능, 불편함)</option>
+                            <option value="Trivial">Trivial (사소 - 단순 오탈자, 미세 UI)</option>
+                        </select>
+                    </div>
+
+                    <!-- 우선순위 (Priority) -->
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">우선순위 (Priority)</label>
+                        <select id="formPriority" class="w-full border border-jira-border rounded px-3 py-2 bg-white focus:border-jira-blue focus:outline-none text-jira-dark">
+                            <option value="Highest">Highest (최상 - 즉시 핫픽스 필요)</option>
+                            <option value="High">High (상 - 이번 빌드 내 수정)</option>
+                            <option value="Medium" selected>Medium (중 - 일반 수정 일정)</option>
+                            <option value="Low">Low (하 - 추후 개선)</option>
+                            <option value="Lowest">Lowest (최하 - 여유 시 반영)</option>
+                        </select>
+                    </div>
+                   
+                    <!-- 테스트 환경 (Environment) -->
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">테스트 환경 (Environment)</label>
+                        <input type="text" id="formEnvironment" value="Windows 11 / Build v1.0.4 (QA 서버)" placeholder="예: iOS 18.1 / iPhone 15 Pro / v1.0.4" 
+                               class="w-full border border-jira-border rounded px-3 py-2 bg-white focus:border-jira-blue focus:outline-none text-jira-dark">
+                    </div>
+
+                    <!-- 담당자 (Assignee) -->
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">담당자 (Assignee)</label>
+                        <select id="formAssignee" class="w-full border border-jira-border rounded px-3 py-2 bg-white focus:border-jira-blue focus:outline-none text-jira-dark">
+                            <option value="김개발 (클라이언트)">김개발 (클라이언트 프로그래머)</option>
+                            <option value="이서버 (백엔드)">이서버 (서버 프로그래머)</option>
+                            <option value="박기획 (시스템)">박기획 (게임/서비스 기획자)</option>
+                            <option value="최아트 (UI/UX)">최아트 (UI/UX 디자이너)</option>
+                            <option value="미할당">할당되지 않음</option>
+                        </select>
+                    </div>
+
+                    <!-- 레이블 (Labels) -->
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">레이블 (Labels - 쉼표로 구분)</label>
+                        <div class="flex flex-wrap gap-1.5 mb-2">
+                            <button type="button" onclick="addLabelTag('전투시스템')" class="text-[11px] bg-white hover:bg-blue-50 border border-jira-border px-2 py-0.5 rounded text-jira-subtle hover:text-jira-blue">+ 전투시스템</button>
+                            <button type="button" onclick="addLabelTag('UI/UX')" class="text-[11px] bg-white hover:bg-blue-50 border border-jira-border px-2 py-0.5 rounded text-jira-subtle hover:text-jira-blue">+ UI/UX</button>
+                            <button type="button" onclick="addLabelTag('크래시')" class="text-[11px] bg-white hover:bg-blue-50 border border-jira-border px-2 py-0.5 rounded text-jira-subtle hover:text-jira-blue">+ 크래시</button>
+                            <button type="button" onclick="addLabelTag('로컬라이징')" class="text-[11px] bg-white hover:bg-blue-50 border border-jira-border px-2 py-0.5 rounded text-jira-subtle hover:text-jira-blue">+ 로컬라이징</button>
+                            <button type="button" onclick="addLabelTag('네트워크')" class="text-[11px] bg-white hover:bg-blue-50 border border-jira-border px-2 py-0.5 rounded text-jira-subtle hover:text-jira-blue">+ 네트워크</button>
+                        </div>
+                        <input type="text" id="formLabels" placeholder="예: 전투시스템, 크래시, 핫픽스대상" 
+                               class="w-full border border-jira-border rounded px-3 py-2 bg-white focus:border-jira-blue focus:outline-none text-jira-dark">
+                    </div>
+
+                    <!-- 첨부파일 및 링크 입력 영역 -->
+                    <div class="sm:col-span-2">
+                        <label class="block text-xs font-bold text-jira-subtle mb-1.5">첨부파일 및 증적 링크 (스크린샷 / 유튜브 / 드라이브 URL)</label>
+                        <div class="border border-jira-border rounded-lg p-3 bg-white space-y-3">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button type="button" onclick="addMockAttachment('bug_capture_video.mp4', 'https://youtube.com')" class="text-xs bg-blue-50 hover:bg-blue-100 text-jira-blue font-medium px-2.5 py-1.5 rounded transition">
+                                    <i class="fas fa-video mr-1"></i>+ 재현 영상(가상)
+                                </button>
+                                <button type="button" onclick="addMockAttachment('error_screenshot.png', 'https://placehold.co/600x400')" class="text-xs bg-gray-100 hover:bg-gray-200 text-jira-dark font-medium px-2.5 py-1.5 rounded transition">
+                                    <i class="fas fa-image mr-1"></i>+ 오류 스크린샷(가상)
+                                </button>
+                            </div>
+                            <!-- 직접 파일명과 링크를 입력하는 입력폼 -->
+                            <div class="flex flex-col sm:flex-row gap-2 pt-2 border-t border-gray-100">
+                                <input type="text" id="customFileNameInput" placeholder="파일명 (예: boss_bug.mp4)" class="flex-1 text-xs border border-jira-border rounded px-2.5 py-1.5 focus:outline-none focus:border-jira-blue">
+                                <input type="url" id="customFileUrlInput" placeholder="연결 링크 URL (예: https://youtu.be/...)" class="flex-1 text-xs border border-jira-border rounded px-2.5 py-1.5 focus:outline-none focus:border-jira-blue">
+                                <button type="button" onclick="addCustomAttachment()" class="text-xs bg-jira-blue hover:bg-jira-blueHover text-white font-medium px-3 py-1.5 rounded transition whitespace-nowrap">
+                                    <i class="fas fa-plus mr-1"></i>첨부 추가
+                                </button>
+                            </div>
+                            <div id="attachmentPreviewList" class="mt-2.5 flex flex-wrap gap-2"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 모달 하단 액션 버튼 -->
+                <div class="pt-3 border-t border-jira-border flex items-center justify-end space-x-3 sticky bottom-0 bg-white">
+                    <button type="button" onclick="closeCreateModal()" class="px-4 py-2 text-sm font-medium text-jira-subtle hover:bg-jira-bg rounded transition">
+                        취소
+                    </button>
+                    <button type="button" id="createModalSubmitBtn" onclick="CreateIssue()" class="px-5 py-2 text-sm font-semibold bg-jira-blue hover:bg-jira-blueHover text-white rounded shadow-sm transition">
+                        만들기
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 모달 2: Jira 이슈 상세 보기 & QA 검증 댓글 모달 (Issue Detail Modal) -->
+    <!-- ===================================================================== -->
+    <div id="detailModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 z-50 hidden flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col modal-animate overflow-hidden">
+            
+            <!-- 상단 헤더 (이슈 키 & 닫기/삭제/수정 버튼) -->
+            <div class="px-6 py-3.5 border-b border-jira-border flex items-center justify-between bg-white shrink-0">
+                <div class="flex items-center space-x-2.5">
+                    <span id="detailTypeIcon"></span>
+                    <span id="detailKey" class="text-sm font-bold text-jira-subtle hover:underline cursor-pointer">ALPHA-101</span>
+                    <span class="text-gray-300">|</span>
+                    <span id="detailProjectBadge" class="text-xs bg-jira-bg text-jira-subtle px-2 py-0.5 rounded font-medium">PROJECT-ALPHA</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <!-- 수정 버튼 추가 -->
+                    <button onclick="openEditIssueModal()" title="이슈 수정" class="flex items-center space-x-1 text-xs font-semibold text-jira-blue bg-jira-blueLight hover:bg-blue-200 px-3 py-1.5 rounded transition">
+                        <i class="fas fa-pen text-xs"></i>
+                        <span>수정</span>
+                    </button>
+                    <button onclick="deleteCurrentIssue()" title="이슈 삭제" class="text-jira-subtle hover:text-jira-red p-1.5 rounded hover:bg-red-50 transition text-sm">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                    <button onclick="closeDetailModal()" class="text-jira-subtle hover:text-jira-dark p-1.5 rounded hover:bg-jira-bg transition">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 상세 본문 (좌측 설명/댓글 + 우측 세부 속성) -->
+            <div class="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-jira-border">
+                
+                <!-- 좌측 영역 (2/3): 제목, 설명, 첨부파일, 활동/댓글 -->
+                <div class="lg:col-span-2 p-6 space-y-6">
+                    <div>
+                        <h2 id="detailSummary" class="text-xl font-bold text-jira-dark leading-snug">이슈 제목 영역</h2>
+                    </div>
+
+                    <!-- 설명 영역 -->
+                    <div>
+                        <h3 class="text-xs font-bold text-jira-subtle uppercase tracking-wider mb-2">설명 (Description)</h3>
+                        <div id="detailDescription" class="bg-jira-bg p-4 rounded-lg text-sm text-jira-dark whitespace-pre-line leading-relaxed border border-jira-border font-sans">
+                        </div>
+                    </div>
+
+                    <!-- 첨부파일 영역 -->
+                    <div id="detailAttachmentsSection">
+                        <h3 class="text-xs font-bold text-jira-subtle uppercase tracking-wider mb-2">첨부 파일 (클릭 시 링크 새 창 열림)</h3>
+                        <div id="detailAttachments" class="flex flex-wrap gap-2"></div>
+                    </div>
+
+                    <!-- 댓글 (QA 검증 코멘트 연습 영역) -->
+                    <div class="pt-4 border-t border-jira-border">
+                        <h3 class="text-xs font-bold text-jira-subtle uppercase tracking-wider mb-3">활동 및 댓글 (QA 검증 기록)</h3>
+                        
+                        <!-- 빠른 QA 검증 댓글 버튼 -->
+                        <div class="flex flex-wrap gap-1.5 mb-2">
+                            <button type="button" onclick="fillQuickComment('[재현 확인 완료] QA 환경에서 동일 스텝으로 100% 재현됨을 확인했습니다. 담당자 배정합니다.')" class="text-[11px] bg-blue-50 hover:bg-blue-100 text-jira-blue border border-blue-200 px-2.5 py-1 rounded font-medium transition">
+                                <i class="fas fa-search mr-1"></i>재현 확인 완료
+                            </button>
+                            <button type="button" onclick="fillQuickComment('[수정 빌드 재테스트 PASS] 수정 반영된 최신 빌드에서 5회 반복 검증 결과 정상 동작 확인되어 이슈 완료(Done) 처리합니다.')" class="text-[11px] bg-green-50 hover:bg-green-100 text-jira-green border border-green-200 px-2.5 py-1 rounded font-medium transition">
+                                <i class="fas fa-check-circle mr-1"></i>수정 빌드 재테스트 PASS
+                            </button>
+                            <button type="button" onclick="fillQuickComment('[재현 불가 / 추가 정보 요청] 현재 빌드에서는 동일 현상이 재현되지 않습니다. 발생 당시 로그나 상세 조건 확인 부탁드립니다.')" class="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded font-medium transition">
+                                <i class="fas fa-question-circle mr-1"></i>재현 불가 / 추가 정보 요청
+                            </button>
+                        </div>
+
+                        <!-- 댓글 입력 폼 -->
+                        <div class="flex space-x-3 mb-5">
+                            <div class="w-8 h-8 rounded-full bg-jira-blue text-white font-bold text-xs flex items-center justify-center shrink-0 mt-1">
+                                QA
+                            </div>
+                            <div class="flex-1">
+                                <textarea id="newCommentInput" rows="2" placeholder="개발자에게 전달할 추가 정보나 QA 검증 결과를 댓글로 남겨보세요..." class="w-full border border-jira-border rounded p-2.5 text-sm focus:border-jira-blue focus:outline-none"></textarea>
+                                <div class="mt-1.5 flex justify-end">
+                                    <button onclick="addComment()" class="bg-jira-blue hover:bg-jira-blueHover text-white text-xs font-semibold px-3.5 py-1.5 rounded transition">
+                                        저장
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 등록된 댓글 목록 -->
+                        <div id="detailCommentsList" class="space-y-3"></div>
+                    </div>
+                </div>
+
+                <!-- 우측 영역 (1/3): 상태 변경 및 세부 정보 패널 -->
+                <div class="p-6 bg-gray-50 space-y-5 text-sm">
+                    
+                    <!-- 상태 드롭다운 (Jira 핵심 워크플로우) -->
+                    <div>
+                        <label class="block text-xs font-bold text-jira-subtle uppercase mb-1.5">상태 (Status)</label>
+                        <select id="detailStatusSelect" onchange="updateIssueField('status', this.value)" class="w-full font-bold text-xs uppercase tracking-wide px-3 py-2 rounded border border-jira-border shadow-sm focus:outline-none cursor-pointer">
+                            <option value="TODO">할 일 (TO DO)</option>
+                            <option value="IN_PROGRESS">진행 중 (IN PROGRESS)</option>
+                            <option value="IN_QA">검증 대기 (IN QA)</option>
+                            <option value="DONE">완료 (DONE)</option>
+                        </select>
+                    </div>
+
+                    <!-- 세부 정보 카드 -->
+                    <div class="bg-white border border-jira-border rounded-lg p-4 space-y-4 shadow-sm">
+                        <h4 class="text-xs font-bold text-jira-dark border-b border-jira-border pb-2">세부 정보 (Details)</h4>
+                        
+                        <div>
+                            <div class="text-xs text-jira-subtle mb-1">담당자 (Assignee)</div>
+                            <select id="detailAssigneeSelect" onchange="updateIssueField('assignee', this.value)" class="w-full text-xs font-medium text-jira-dark bg-jira-bg border border-jira-border rounded px-2.5 py-1.5">
+                                <option value="김개발 (클라이언트)">김개발 (클라이언트)</option>
+                                <option value="이서버 (백엔드)">이서버 (백엔드)</option>
+                                <option value="박기획 (시스템)">박기획 (시스템)</option>
+                                <option value="최아트 (UI/UX)">최아트 (UI/UX)</option>
+                                <option value="미할당">미할당</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <div class="text-xs text-jira-subtle mb-1">보고자 (Reporter)</div>
+                            <div class="flex items-center space-x-2 text-xs font-medium text-jira-dark">
+                                <span class="w-5 h-5 rounded-full bg-jira-blue text-white text-[10px] flex items-center justify-center font-bold">QA</span>
+                                <span id="detailReporter">QA 테스터 (나)</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="text-xs text-jira-subtle mb-1">심각도 (Severity)</div>
+                            <select id="detailSeveritySelect" onchange="updateIssueField('severity', this.value)" class="w-full text-xs font-semibold border border-jira-border rounded px-2.5 py-1.5 bg-white">
+                                <option value="Blocker">Blocker (차단)</option>
+                                <option value="Critical">Critical (치명적)</option>
+                                <option value="Major">Major (주요)</option>
+                                <option value="Minor">Minor (경미)</option>
+                                <option value="Trivial">Trivial (사소)</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <div class="text-xs text-jira-subtle mb-1">우선순위 (Priority)</div>
+                            <select id="detailPrioritySelect" onchange="updateIssueField('priority', this.value)" class="w-full text-xs font-semibold border border-jira-border rounded px-2.5 py-1.5 bg-white">
+                                <option value="Highest">Highest</option>
+                                <option value="High">High</option>
+                                <option value="Medium">Medium</option>
+                                <option value="Low">Low</option>
+                                <option value="Lowest">Lowest</option>
+                            </select>
+                        </div>
+                       
+                        <div>
+                            <div class="text-xs text-jira-subtle mb-1">테스트 환경 (Environment)</div>
+                            <div id="detailEnvironment" class="text-xs font-medium text-jira-dark bg-jira-bg p-2 rounded border border-jira-border"></div>
+                        </div>
+
+                        <div>
+                            <div class="text-xs text-jira-subtle mb-1">레이블 (Labels)</div>
+                            <div id="detailLabels" class="flex flex-wrap gap-1"></div>
+                        </div>
+                    </div>
+
+                    <div class="text-[11px] text-jira-subtle space-y-1 px-1">
+                        <div>생성됨: <span id="detailCreatedAt"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 모달 3: 새 프로젝트 만들기 / 수정 모달 (Project Management Modal) -->
+    <!-- ===================================================================== -->
+    <div id="projectModal" class="fixed inset-0 bg-slate-900 bg-opacity-60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-md modal-animate overflow-hidden">
+            <div class="px-6 py-4 border-b border-jira-border flex items-center justify-between">
+                <h3 id="projectModalTitle" class="text-base font-bold text-jira-dark">새 프로젝트 만들기</h3>
+                <button onclick="closeProjectModal()" class="text-jira-subtle hover:text-jira-dark p-1 rounded">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <form id="projectForm" onsubmit="handleProjectSubmit(event)" class="p-6 space-y-4 text-sm">
+                <input type="hidden" id="editProjectOriginalKey" value="">
+                
+                <div>
+                    <label class="block text-xs font-bold text-jira-subtle mb-1.5">프로젝트 이름 (Project Name) <span class="text-jira-red">*</span></label>
+                    <input type="text" id="projNameInput" required placeholder="예: 포켓몬 전투 시스템 QA, 액션 RPG 빌드 검증" 
+                           class="w-full border border-jira-border rounded px-3 py-2 focus:border-jira-blue focus:outline-none text-jira-dark font-medium">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-jira-subtle mb-1.5">프로젝트 키 (Key - 영문 대문자 2~6자) <span class="text-jira-red">*</span></label>
+                    <input type="text" id="projKeyInput" required minlength="2" maxlength="6" pattern="[A-Za-z0-9]{2,6}" 
+                           oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '')"
+                           placeholder="예: PKM, RPG, BATTLE" 
+                           class="w-full border border-jira-border rounded px-3 py-2 bg-jira-bg focus:bg-white focus:border-jira-blue focus:outline-none text-jira-dark font-bold uppercase tracking-wider">
+                    <p class="text-[11px] text-jira-subtle mt-1">이슈 번호의 접두사로 사용됩니다. (예: 키가 <strong class="text-jira-blue">PKM</strong>이면 <strong class="text-jira-blue">PKM-1, PKM-2</strong>로 생성)</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-jira-subtle mb-1.5">프로젝트 설명 / 카테고리</label>
+                    <input type="text" id="projDescInput" placeholder="예: 전투 로직 및 UI/UX 집중 QA 보드" 
+                           class="w-full border border-jira-border rounded px-3 py-2 focus:border-jira-blue focus:outline-none text-jira-dark">
+                </div>
+
+                <div class="pt-4 border-t border-jira-border flex items-center justify-between">
+                    <button type="button" id="deleteProjectBtn" onclick="confirmDeleteProject()" class="hidden text-xs font-semibold text-jira-red hover:bg-red-50 px-3 py-1.5 rounded transition">
+                        <i class="fas fa-trash-alt mr-1"></i>프로젝트 삭제
+                    </button>
+                    <div class="flex items-center space-x-2 ml-auto">
+                        <button type="button" onclick="closeProjectModal()" class="px-3.5 py-1.5 text-xs font-medium text-jira-subtle hover:bg-jira-bg rounded">취소</button>
+                        <button type="submit" id="projectSubmitBtn" class="px-4 py-1.5 text-xs font-semibold bg-jira-blue text-white rounded shadow-sm">생성하기</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- 커스텀 확인/알림 메시지 박스 (alert/confirm 대체용) -->
+    <!-- ===================================================================== -->
+    <div id="customDialog" class="fixed inset-0 bg-slate-900 bg-opacity-50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 modal-animate">
+            <h3 id="dialogTitle" class="text-base font-bold text-jira-dark mb-2">알림</h3>
+            <p id="dialogMessage" class="text-sm text-jira-subtle mb-5 leading-relaxed"></p>
+            <div class="flex justify-end space-x-2">
+                <button id="dialogCancelBtn" onclick="closeDialog()" class="px-3.5 py-1.5 text-xs font-medium text-jira-subtle hover:bg-jira-bg rounded">취소</button>
+                <button id="dialogConfirmBtn" class="px-4 py-1.5 text-xs font-semibold bg-jira-blue text-white rounded hover:bg-jira-blueHover">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 토스트 알림 (Toast Notification) -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
+    <!-- ===================================================================== -->
+    <!-- JavaScript 애플리케이션 로직 -->
+    <!-- ===================================================================== -->
+    <script>
+        // 로컬 스토리지 키
+        const STORAGE_KEY = 'jira_qa_practice_issues_v2';
+        const PROJECTS_STORAGE_KEY = 'jira_qa_practice_projects_v2';
+
+        // 기본 샘플 프로젝트
+        const DEFAULT_PROJECTS = [
+            {
+                key: 'ALPHA',
+                name: '신작 RPG 프로젝트 QA',
+                description: '게임 클라이언트 & 전투 시스템 QA'
+            }
+        ];
+
+        // 초기 샘플 QA 데이터 (실무 수준의 예시 티켓)
+        const DEFAULT_ISSUES = [
+            {
+                id: 'ALPHA-1',
+                project: 'ALPHA',
+                type: 'Bug',
+                summary: '[전투/스킬] 궁극기 시전 직후 캔슬 회피 입력 시 클라이언트가 강제 종료되는 현상',
+                description: `[사전 조건]\n- 빌드 버전: v1.0.4 (QA 서버)\n- 테스트 계정: 레벨 45 검사 클래스\n\n[재현 경로 (Steps to Reproduce)]\n1. 필드 사냥터 또는 훈련장 입장\n2. '천공 베기(R)' 궁극기 스킬 사용\n3. 스킬 선딜레이(0.3초 이내) 구간에 스페이스바(회피) 연타\n\n[기대 결과 (Expected Result)]\n- 궁극기 시전이 취소되고 회피 동작이 정상 실행되어야 함\n\n[실제 결과 (Actual Result)]\n- 애니메이션 충돌과 함께 Fatal Error 팝업 출력 후 클라이언트 강제 종료됨\n\n[재현 빈도]\n- 5/5 (100% 재현)`,
+                status: 'TODO',
+                severity: 'Critical',
+                priority: 'Highest',
+                environment: 'Windows 11 / RTX 4060 / Build v1.0.4',
+                assignee: '김개발 (클라이언트)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['전투시스템', '크래시', '핫픽스'],
+                attachments: [
+                    { name: 'skill_crash_repro.mp4', url: 'https://www.youtube.com' },
+                    { name: 'crash_dump_01.log', url: 'https://github.com' }
+                ],
+                createdAt: '2026-11-12 14:20',
+                comments: [
+                    { author: '김개발 (클라이언트)', text: '로그 확인했습니다. 애니메이션 몽타주 블렌딩 예외 처리 누락으로 보입니다. 오늘 오후 중 수정 빌드 반영하겠습니다.', time: '2026-11-12 15:05' }
+                ]
+            },
+            {
+                id: 'ALPHA-2',
+                project: 'ALPHA',
+                type: 'Bug',
+                summary: '[상점/결제] 보유 재화가 부족한 상태에서 패키지 구매 버튼 터치 시 안내 팝업 미출력 현상',
+                description: `[사전 조건]\n- 보유 다이아: 100개 (패키지 가격: 1,200 다이아)\n\n[재현 경로]\n1. 메인 로비 우측 상단 [상점] 진입\n2. '초보자 성장 패키지' 선택 후 [1,200 다이아 구매] 버튼 클릭\n\n[기대 결과]\n- '다이아가 부족합니다. 충전소로 이동하시겠습니까?' 안내 팝업 출력\n\n[실제 결과]\n- 버튼 클릭 효과음만 재생되고 아무런 팝업이나 안내 문구가 뜨지 않음\n\n[재현 빈도]\n- 5/5 (100%)`,
+                status: 'IN_PROGRESS',
+                severity: 'Major',
+                priority: 'High',
+                environment: 'iOS 18.1 / iPhone 15 Pro / Build v1.0.4',
+                assignee: '최아트 (UI/UX)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['UI/UX', '상점', '결제'],
+                attachments: [
+                    { name: 'shop_no_popup.png', url: 'https://placehold.co/600x400' }
+                ],
+                createdAt: '2026-11-12 16:40',
+                comments: []
+            },
+            {
+                id: 'ALPHA-3',
+                project: 'ALPHA',
+                type: 'Bug',
+                summary: '[로컬라이징/UI] 일본어(JP) 설정 시 퀘스트 수락 버튼 텍스트가 프레임 밖으로 잘리는 현상',
+                description: `[사전 조건]\n- 환경설정 > 언어 설정을 '日本語(일본어)'로 변경\n\n[재현 경로]\n1. 시작 마을 NPC '카일'과 대화 진행\n2. 메인 퀘스트 수락 창 확인\n\n[기대 결과]\n- 버튼 영역 내부에 텍스트가 줄바꿈되거나 폰트 크기가 자동 조절되어 온전히 표시됨\n\n[실제 결과]\n- 'クエストを受諾する' 텍스트 좌우 끝부분이 버튼 박스 밖으로 삐져나옴\n\n[재현 빈도]\n- 5/5 (100%)`,
+                status: 'IN_QA',
+                severity: 'Minor',
+                priority: 'Medium',
+                environment: 'Android 15 / Galaxy S24 / Build v1.0.5',
+                assignee: '최아트 (UI/UX)',
+                reporter: 'QA 테스터 (나)',
+                labels: ['로컬라이징', 'UI/UX'],
+                attachments: [
+                    { name: 'jp_text_overflow.png', url: 'https://placehold.co/600x400' }
+                ],
+                createdAt: '2026-11-13 09:15',
+                comments: [
+                    { author: '최아트 (UI/UX)', text: 'Auto-fit 텍스트 컴포넌트 적용 완료했습니다. QA 검증 부탁드립니다!', time: '2026-11-13 11:30' }
+                ]
+            }
+        ];
+
+        // 애플리케이션 상태 변수
+        let projects = [];
+        let issues = [];
+        let currentProjectKey = 'ALPHA';
+        let currentView = 'board';
+        let selectedIssueId = null;
+        let draggedIssueId = null;
+        let tempAttachments = [];
+
+        // 초기화 실행
+        window.onload = function() {
+            loadData();
+            syncProjectSelectors();
+            renderAll();
+        };
+
+        // 데이터 로드 (localStorage)
+        function loadData() {
+            try {
+                const savedProjects = localStorage.getItem(PROJECTS_STORAGE_KEY);
+                const savedIssues = localStorage.getItem(STORAGE_KEY);
+
+                if (savedProjects) {
+                    projects = JSON.parse(savedProjects);
+                } else {
+                    projects = JSON.parse(JSON.stringify(DEFAULT_PROJECTS));
+                }
+
+                if (savedIssues) {
+                    issues = JSON.parse(savedIssues);
+                } else {
+                    issues = JSON.parse(JSON.stringify(DEFAULT_ISSUES));
+                }
+
+                // 구 버전 문자열 배열 첨부파일 데이터 호환성 처리
+                issues.forEach(issue => {
+                    if (issue.attachments && issue.attachments.length > 0 && typeof issue.attachments[0] === 'string') {
+                        issue.attachments = issue.attachments.map(name => ({
+                            name: name,
+                            url: name.endsWith('.mp4') ? 'https://youtube.com' : 'https://placehold.co/600x400'
+                        }));
+                    }
+                });
+
+                if (projects.length > 0) {
+                    currentProjectKey = projects[0].key;
+                }
+                saveData();
+            } catch (e) {
+                console.error('로컬 스토리지 로드 오류:', e);
+                projects = JSON.parse(JSON.stringify(DEFAULT_PROJECTS));
+                issues = JSON.parse(JSON.stringify(DEFAULT_ISSUES));
+                currentProjectKey = 'ALPHA';
+            }
+        }
+
+        // 데이터 저장
+        function saveData() {
+            try {
+                localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(issues));
+            } catch (e) {
+                console.error('저장 실패:', e);
+            }
+        }
+
+        // 프로젝트 드롭다운 및 사이드바 정보 동기화
+        function syncProjectSelectors() {
+            const globalSelect = document.getElementById('globalProjectFilter');
+            const formSelect = document.getElementById('formProject');
+
+            // 상단 글로벌 드롭다운 구성
+            let globalOptions = projects.map(p => 
+                `<option value="${escapeHTML(p.key)}">[${escapeHTML(p.key)}] ${escapeHTML(p.name)}</option>`
+            ).join('');
+            globalOptions += `<option value="ALL">🌐 전체 프로젝트 모아보기</option>`;
+            globalSelect.innerHTML = globalOptions;
+
+            // 이슈 생성 모달 드롭다운 구성
+            formSelect.innerHTML = projects.map(p => 
+                `<option value="${escapeHTML(p.key)}">[${escapeHTML(p.key)}] ${escapeHTML(p.name)}</option>`
+            ).join('');
+
+            if (currentProjectKey !== 'ALL' && !projects.some(p => p.key === currentProjectKey)) {
+                currentProjectKey = projects.length > 0 ? projects[0].key : 'ALL';
+            }
+            globalSelect.value = currentProjectKey;
+            updateSidebarProjectInfo();
+        }
+
+        function handleProjectChange(newKey) {
+            currentProjectKey = newKey;
+            updateSidebarProjectInfo();
+            renderAll();
+        }
+
+        function updateSidebarProjectInfo() {
+            const keyEl = document.getElementById('sidebarProjectKey');
+            const nameEl = document.getElementById('sidebarProjectName');
+            const editBtn = document.getElementById('editProjectBtn');
+
+            if (currentProjectKey === 'ALL') {
+                keyEl.textContent = 'ALL PROJECTS';
+                nameEl.textContent = `총 ${projects.length}개 프로젝트 통합 뷰`;
+                editBtn.classList.add('hidden');
+            } else {
+                const proj = projects.find(p => p.key === currentProjectKey);
+                if (proj) {
+                    keyEl.textContent = `PROJECT-${proj.key}`;
+                    nameEl.textContent = proj.name;
+                    editBtn.classList.remove('hidden');
+                }
+            }
+        }
+
+        function switchView(viewName) {
+            currentView = viewName;
+            
+            document.querySelectorAll('.nav-item').forEach(btn => {
+                btn.classList.remove('bg-jira-blueLight', 'text-jira-blue');
+                btn.classList.add('text-jira-dark', 'hover:bg-gray-200');
+            });
+            const activeNav = document.getElementById(`nav-${viewName}`);
+            if (activeNav) {
+                activeNav.classList.remove('text-jira-dark', 'hover:bg-gray-200');
+                activeNav.classList.add('bg-jira-blueLight', 'text-jira-blue');
+            }
+
+            document.getElementById('view-board').classList.add('hidden');
+            document.getElementById('view-list').classList.add('hidden');
+            document.getElementById('view-guide').classList.add('hidden');
+            document.getElementById(`view-${viewName}`).classList.remove('hidden');
+
+            const toolbar = document.getElementById('toolbarArea');
+            const breadcrumbView = document.getElementById('breadcrumbView');
+            const pageTitle = document.getElementById('pageTitle');
+
+            if (viewName === 'guide') {
+                toolbar.classList.add('hidden');
+            } else {
+                toolbar.classList.remove('hidden');
+                if (viewName === 'board') {
+                    breadcrumbView.textContent = '칸반 보드';
+                    pageTitle.textContent = 'QA 스프린트 보드';
+                } else if (viewName === 'list') {
+                    breadcrumbView.textContent = '이슈 목록';
+                    pageTitle.textContent = '전체 이슈 및 버그 리포트';
+                }
+            }
+
+            if (window.innerWidth < 768) {
+                document.getElementById('sidebar').classList.add('-translate-x-full');
+                document.getElementById('sidebarBackdrop').classList.add('hidden');
+            }
+
+            renderAll();
+        }
+
+        function toggleMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const backdrop = document.getElementById('sidebarBackdrop');
+            sidebar.classList.toggle('-translate-x-full');
+            backdrop.classList.toggle('hidden');
+        }
+        document.getElementById('mobileMenuBtn').addEventListener('click', toggleMobileSidebar);
+
+        function getFilteredIssues() {
+            const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
+            const typeFilter = document.getElementById('typeFilter').value;
+            const priorityFilter = document.getElementById('priorityFilter').value;
+
+            const proj = projects.find(p => p.key === currentProjectKey);
+            document.getElementById('breadcrumbProject').textContent = currentProjectKey === 'ALL' ? '전체 프로젝트' : `[${currentProjectKey}] ${proj ? proj.name : ''}`;
+            
+            if (currentView === 'board') {
+                document.getElementById('pageTitle').textContent = currentProjectKey === 'ALL' ? '전체 프로젝트 통합 보드' : `${proj ? proj.name : currentProjectKey} 보드`;
+            }
+
+            return issues.filter(issue => {
+                const matchProject = currentProjectKey === 'ALL' || issue.project === currentProjectKey;
+                const matchType = typeFilter === 'ALL' || issue.type === typeFilter;
+                const matchPriority = priorityFilter === 'ALL' || issue.priority === priorityFilter;
+                const matchSearch = !searchQuery || 
+                                    issue.id.toLowerCase().includes(searchQuery) || 
+                                    issue.summary.toLowerCase().includes(searchQuery) ||
+                                    (issue.labels && issue.labels.some(l => l.toLowerCase().includes(searchQuery)));
+                return matchProject && matchType && matchPriority && matchSearch;
+            });
+        }
+
+        function renderAll() {
+            const filtered = getFilteredIssues();
+            document.getElementById('sidebarIssueCount').textContent = filtered.length;
+            renderKanbanBoard(filtered);
+            renderIssueTable(filtered);
+        }
+
+        function getTypeIconHTML(type) {
+            switch (type) {
+                case 'Bug':
+                    return `<span class="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-jira-red text-white text-[10px]" title="버그 (Bug)"><i class="fas fa-bug"></i></span>`;
+                case 'Task':
+                    return `<span class="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-blue-500 text-white text-[10px]" title="작업 (Task)"><i class="fas fa-check"></i></span>`;
+                case 'Story':
+                    return `<span class="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-jira-green text-white text-[10px]" title="스토리 (Story)"><i class="fas fa-bookmark"></i></span>`;
+                case 'Improvement':
+                    return `<span class="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-jira-purple text-white text-[10px]" title="개선 (Improvement)"><i class="fas fa-arrow-up"></i></span>`;
+                default:
+                    return `<span class="inline-flex items-center justify-center w-4 h-4 rounded-sm bg-gray-500 text-white text-[10px]"><i class="fas fa-circle"></i></span>`;
+            }
+        }
+
+        function getPriorityIconHTML(priority) {
+            switch (priority) {
+                case 'Highest':
+                    return `<span class="text-jira-red font-bold text-xs flex items-center" title="우선순위: Highest"><i class="fas fa-angles-up mr-1"></i>Highest</span>`;
+                case 'High':
+                    return `<span class="text-orange-600 font-semibold text-xs flex items-center" title="우선순위: High"><i class="fas fa-chevron-up mr-1"></i>High</span>`;
+                case 'Medium':
+                    return `<span class="text-amber-500 font-medium text-xs flex items-center" title="우선순위: Medium"><i class="fas fa-equals mr-1"></i>Medium</span>`;
+                case 'Low':
+                    return `<span class="text-blue-500 font-medium text-xs flex items-center" title="우선순위: Low"><i class="fas fa-chevron-down mr-1"></i>Low</span>`;
+                case 'Lowest':
+                    return `<span class="text-gray-400 font-medium text-xs flex items-center" title="우선순위: Lowest"><i class="fas fa-angles-down mr-1"></i>Lowest</span>`;
+                default:
+                    return `<span class="text-gray-400 text-xs">${priority}</span>`;
+            }
+        }
+
+        function getSeverityBadgeHTML(severity) {
+            const styles = {
+                'Blocker': 'bg-purple-900 text-white border-purple-950',
+                'Critical': 'bg-red-100 text-red-800 border-red-200',
+                'Major': 'bg-orange-100 text-orange-800 border-orange-200',
+                'Minor': 'bg-blue-50 text-blue-700 border-blue-200',
+                'Trivial': 'bg-gray-100 text-gray-600 border-gray-200'
+            };
+            const cls = styles[severity] || styles['Minor'];
+            return `<span class="text-[11px] font-semibold px-2 py-0.5 rounded border ${cls}">${severity}</span>`;
+        }
+
+        function getStatusBadgeHTML(status) {
+            const map = {
+                'TODO': { label: '할 일', cls: 'bg-gray-200 text-jira-dark' },
+                'IN_PROGRESS': { label: '진행 중', cls: 'bg-jira-blueLight text-jira-blue' },
+                'IN_QA': { label: '검증 대기', cls: 'bg-purple-100 text-purple-800' },
+                'DONE': { label: '완료', cls: 'bg-green-100 text-jira-green' }
+            };
+            const item = map[status] || map['TODO'];
+            return `<span class="text-[11px] font-bold px-2 py-0.5 rounded ${item.cls}">${item.label}</span>`;
+        }
+
+        function renderKanbanBoard(filteredIssues) {
+            const statuses = ['TODO', 'IN_PROGRESS', 'IN_QA', 'DONE'];
+            
+            statuses.forEach(status => {
+                const colEl = document.getElementById(`col-${status}`);
+                const countEl = document.getElementById(`count-${status}`);
+                const colIssues = filteredIssues.filter(i => i.status === status);
+                
+                countEl.textContent = colIssues.length;
+                colEl.innerHTML = '';
+
+                if (colIssues.length === 0) {
+                    colEl.innerHTML = `<div class="text-center py-8 text-xs text-jira-subtle border border-dashed border-gray-300 rounded-lg">이슈를 이곳으로 드래그하세요</div>`;
+                    return;
+                }
+
+                colIssues.forEach(issue => {
+                    const card = document.createElement('div');
+                    card.className = 'issue-card bg-white p-3.5 rounded shadow-sm border border-jira-border cursor-pointer select-none';
+                    card.draggable = true;
+                    card.ondragstart = (e) => dragStart(e, issue.id);
+                    card.ondragend = dragEnd;
+                    card.onclick = () => openDetailModal(issue.id);
+
+                    const labelsHTML = (issue.labels || []).slice(0, 2).map(l => 
+                        `<span class="text-[10px] font-medium bg-gray-100 text-jira-subtle px-1.5 py-0.5 rounded">${l}</span>`
+                    ).join('');
+
+                    const commentCount = (issue.comments || []).length;
+                    const attachCount = (issue.attachments || []).length;
+
+                    card.innerHTML = `
+                        <div class="flex items-start justify-between gap-2 mb-2">
+                            <p class="text-sm font-medium text-jira-dark leading-snug line-clamp-2">${escapeHTML(issue.summary)}</p>
+                        </div>
+                        
+                        <div class="flex flex-wrap items-center gap-1.5 mb-3">
+                            ${getSeverityBadgeHTML(issue.severity)}
+                            ${labelsHTML}
+                        </div>
+
+                        <div class="flex items-center justify-between pt-2 border-t border-gray-100 text-xs">
+                            <div class="flex items-center space-x-2">
+                                ${getTypeIconHTML(issue.type)}
+                                <span class="font-semibold text-jira-subtle text-xs">${issue.id}</span>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                ${attachCount > 0 ? `<span class="text-jira-subtle text-[11px]" title="첨부파일"><i class="fas fa-paperclip"></i> ${attachCount}</span>` : ''}
+                                ${commentCount > 0 ? `<span class="text-jira-subtle text-[11px]" title="댓글"><i class="far fa-comment"></i> ${commentCount}</span>` : ''}
+                                ${getPriorityIconHTML(issue.priority)}
+                                <div class="w-6 h-6 rounded-full bg-slate-700 text-white text-[10px] font-bold flex items-center justify-center" title="담당자: ${issue.assignee}">
+                                    ${issue.assignee.substring(0, 1)}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    colEl.appendChild(card);
+                });
+            });
+        }
+
+        function renderIssueTable(filteredIssues) {
+            const tbody = document.getElementById('issueTableBody');
+            tbody.innerHTML = '';
+
+            if (filteredIssues.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-sm text-jira-subtle">조건에 일치하는 이슈가 없습니다. 상단 [만들기] 버튼을 눌러 새 이슈를 등록해보세요.</td></tr>`;
+                return;
+            }
+
+            filteredIssues.forEach(issue => {
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-jira-bg cursor-pointer transition';
+                tr.onclick = () => openDetailModal(issue.id);
+
+                tr.innerHTML = `
+                    <td class="py-3 px-4">${getTypeIconHTML(issue.type)}</td>
+                    <td class="py-3 px-4 font-bold text-jira-blue text-xs whitespace-nowrap">${issue.id}</td>
+                    <td class="py-3 px-4 font-medium text-jira-dark">${escapeHTML(issue.summary)}</td>
+                    <td class="py-3 px-4 whitespace-nowrap">${getStatusBadgeHTML(issue.status)}</td>
+                    <td class="py-3 px-4 whitespace-nowrap">${getSeverityBadgeHTML(issue.severity)}</td>
+                    <td class="py-3 px-4 whitespace-nowrap">${getPriorityIconHTML(issue.priority)}</td>
+                    <td class="py-3 px-4 text-xs text-jira-dark whitespace-nowrap">${escapeHTML(issue.assignee)}</td>
+                    <td class="py-3 px-4 text-xs text-jira-subtle whitespace-nowrap">${issue.createdAt.split(' ')[0]}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 드래그 앤 드롭
+        function dragStart(e, issueId) {
+            draggedIssueId = issueId;
+            e.target.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        function dragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        }
+
+        function allowDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drag-over');
+        }
+
+        function leaveDrop(e) {
+            e.currentTarget.classList.remove('drag-over');
+        }
+
+        function dropIssue(e, newStatus) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drag-over');
+            
+            if (!draggedIssueId) return;
+            const issue = issues.find(i => i.id === draggedIssueId);
+            if (issue && issue.status !== newStatus) {
+                issue.status = newStatus;
+                saveData();
+                renderAll();
+                showToast(`${issue.id} 상태가 변경되었습니다.`);
+            }
+            draggedIssueId = null;
+        }
+
+        // 프로젝트 생성 / 수정 / 삭제 모달
+        function openProjectModal(editProj = null) {
+            const form = document.getElementById('projectForm');
+            form.reset();
+            
+            const titleEl = document.getElementById('projectModalTitle');
+            const submitBtn = document.getElementById('projectSubmitBtn');
+            const deleteBtn = document.getElementById('deleteProjectBtn');
+            const keyInput = document.getElementById('projKeyInput');
+            const origKeyInput = document.getElementById('editProjectOriginalKey');
+
+            if (editProj) {
+                titleEl.textContent = '프로젝트 설정 수정';
+                submitBtn.textContent = '저장하기';
+                origKeyInput.value = editProj.key;
+                document.getElementById('projNameInput').value = editProj.name;
+                keyInput.value = editProj.key;
+                keyInput.disabled = true;
+                keyInput.classList.add('opacity-60', 'cursor-not-allowed');
+                document.getElementById('projDescInput').value = editProj.description || '';
+                
+                if (projects.length > 1) {
+                    deleteBtn.classList.remove('hidden');
+                } else {
+                    deleteBtn.classList.add('hidden');
+                }
+            } else {
+                titleEl.textContent = '새 프로젝트 만들기';
+                submitBtn.textContent = '생성하기';
+                origKeyInput.value = '';
+                keyInput.disabled = false;
+                keyInput.classList.remove('opacity-60', 'cursor-not-allowed');
+                deleteBtn.classList.add('hidden');
+            }
+
+            document.getElementById('projectModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('projNameInput').focus(), 100);
+        }
+
+        function openEditCurrentProjectModal() {
+            if (currentProjectKey === 'ALL') return;
+            const proj = projects.find(p => p.key === currentProjectKey);
+            if (proj) openProjectModal(proj);
+        }
+
+        function closeProjectModal() {
+            document.getElementById('projectModal').classList.add('hidden');
+        }
+
+        function handleProjectSubmit(e) {
+            e.preventDefault();
+            const origKey = document.getElementById('editProjectOriginalKey').value;
+            const name = document.getElementById('projNameInput').value.trim();
+            const key = document.getElementById('projKeyInput').value.trim().toUpperCase();
+            const description = document.getElementById('projDescInput').value.trim();
+
+            if (!name || !key) return;
+
+            if (origKey) {
+                const proj = projects.find(p => p.key === origKey);
+                if (proj) {
+                    proj.name = name;
+                    proj.description = description;
+                    saveData();
+                    syncProjectSelectors();
+                    renderAll();
+                    closeProjectModal();
+                    showToast(`프로젝트 [${origKey}] 정보가 수정되었습니다.`);
+                }
+            } else {
+                if (projects.some(p => p.key === key)) {
+                    showToast(`이미 존재하는 프로젝트 키(${key})입니다.`);
+                    return;
+                }
+                projects.push({ key, name, description });
+                currentProjectKey = key;
+                saveData();
+                syncProjectSelectors();
+                renderAll();
+                closeProjectModal();
+                showToast(`새 프로젝트 [${key}]가 생성되었습니다!`);
+            }
+        }
+
+        function confirmDeleteProject() {
+            const origKey = document.getElementById('editProjectOriginalKey').value;
+            if (!origKey || projects.length <= 1) return;
+
+            openConfirmDialog(
+                '프로젝트 삭제 확인',
+                `정말 [${origKey}] 프로젝트와 속한 모든 이슈를 삭제하시겠습니까?`,
+                () => {
+                    projects = projects.filter(p => p.key !== origKey);
+                    issues = issues.filter(i => i.project !== origKey);
+                    currentProjectKey = projects[0].key;
+                    saveData();
+                    closeProjectModal();
+                    syncProjectSelectors();
+                    renderAll();
+                    showToast(`프로젝트 [${origKey}]가 삭제되었습니다.`);
+                }
+            );
+        }
+
+        // =====================================================================
+        // 이슈 만들기 / 수정 모달 제어 (Create & Edit Issue Modal)
+        // =====================================================================
+        function openCreateModal(autoFillBugTemplate = false) {
+            if (projects.length === 0) {
+                openProjectModal();
+                return;
+            }
+            document.getElementById('createIssueForm').reset();
+            document.getElementById('editingIssueId').value = ''; // 신규 모드
+            document.getElementById('createModalTitle').textContent = '이슈 만들기';
+            document.getElementById('createModalSubmitBtn').textContent = '만들기';
+            
+            const formProjSelect = document.getElementById('formProject');
+            formProjSelect.disabled = false;
+            formProjSelect.classList.remove('opacity-60', 'cursor-not-allowed');
+
+            tempAttachments = [];
+            renderAttachmentPreviews();
+
+            if (currentProjectKey !== 'ALL') {
+                formProjSelect.value = currentProjectKey;
+            }
+
+            if (autoFillBugTemplate) {
+                insertTemplate('bug');
+            }
+
+            document.getElementById('createModal').classList.remove('hidden');
+            setTimeout(() => document.getElementById('formSummary').focus(), 100);
+        }
+
+        // 상세 창에서 [수정] 버튼을 눌렀을 때 기존 이슈 내용을 채워서 모달 띄우기
+        function openEditIssueModal() {
+            if (!selectedIssueId) return;
+            const issue = issues.find(i => i.id === selectedIssueId);
+            if (!issue) return;
+
+            // 상세 모달은 닫기
+            closeDetailModal();
+
+            document.getElementById('createIssueForm').reset();
+            document.getElementById('editingIssueId').value = issue.id; // 수정 모드 ID 지정
+            document.getElementById('createModalTitle').textContent = `이슈 수정 (${issue.id})`;
+            document.getElementById('createModalSubmitBtn').textContent = '저장';
+
+            const formProjSelect = document.getElementById('formProject');
+            formProjSelect.value = issue.project;
+            formProjSelect.disabled = true; // 프로젝트는 수정 불가
+            formProjSelect.classList.add('opacity-60', 'cursor-not-allowed');
+
+            document.getElementById('formType').value = issue.type;
+            document.getElementById('formSummary').value = issue.summary;
+            document.getElementById('formDescription').value = issue.description;
+            document.getElementById('formSeverity').value = issue.severity;
+            document.getElementById('formPriority').value = issue.priority;
+            document.getElementById('formEnvironment').value = issue.environment;
+            document.getElementById('formAssignee').value = issue.assignee;
+            document.getElementById('formLabels').value = (issue.labels || []).join(', ');
+
+            tempAttachments = issue.attachments ? JSON.parse(JSON.stringify(issue.attachments)) : [];
+            renderAttachmentPreviews();
+
+            document.getElementById('createModal').classList.remove('hidden');
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.add('hidden');
+        }
+
+        function insertTemplate(templateType) {
+            const descArea = document.getElementById('formDescription');
+            if (templateType === 'bug') {
+                descArea.value = `[사전 조건]\n- 빌드 버전: v1.0.4\n- 테스트 계정/캐릭터 상태: \n\n[재현 경로 (Steps to Reproduce)]\n1. \n2. \n3. \n\n[기대 결과 (Expected Result)]\n- \n\n[실제 결과 (Actual Result)]\n- \n\n[재현 빈도]\n- 5/5 (100% 재현)`;
+                showToast('표준 버그 리포트 양식이 삽입되었습니다.');
+            } else if (templateType === 'ui') {
+                descArea.value = `[발생 위치 / 화면 경로]\n- 예: 메인 로비 > 설정 > 그래픽 탭\n\n[오류 내용 (오탈자 / 레이아웃 깨짐)]\n- 기존 문구: \n- 수정 제안: \n\n[참고 사항]\n- 해상도 1920x1080 기준 확인`;
+                showToast('UI/오탈자 리포트 양식이 삽입되었습니다.');
+            }
+            descArea.focus();
+        }
+
+        function addLabelTag(tag) {
+            const input = document.getElementById('formLabels');
+            const current = input.value.split(',').map(s => s.trim()).filter(Boolean);
+            if (!current.includes(tag)) {
+                current.push(tag);
+                input.value = current.join(', ');
+            }
+        }
+
+        function addMockAttachment(name, url) {
+            if (!tempAttachments.some(a => a.name === name)) {
+                tempAttachments.push({ name, url });
+                renderAttachmentPreviews();
+                showToast(`증적 파일 '${name}'이 추가되었습니다.`);
+            }
+        }
+
+        function addCustomAttachment() {
+            const nameInput = document.getElementById('customFileNameInput');
+            const urlInput = document.getElementById('customFileUrlInput');
+            const name = nameInput.value.trim();
+            const url = urlInput.value.trim();
+
+            if (!name) {
+                showToast('첨부할 파일 이름을 입력해 주세요.');
+                nameInput.focus();
+                return;
+            }
+
+            tempAttachments.push({ name, url: url || '#' });
+            nameInput.value = '';
+            urlInput.value = '';
+            renderAttachmentPreviews();
+            showToast(`첨부파일 '${name}'이 추가되었습니다.`);
+        }
+
+        function removeTempAttachment(index) {
+            tempAttachments.splice(index, 1);
+            renderAttachmentPreviews();
+        }
+
+        function renderAttachmentPreviews() {
+            const container = document.getElementById('attachmentPreviewList');
+            container.innerHTML = tempAttachments.map((att, idx) => `
+                <span class="inline-flex items-center space-x-1.5 text-xs bg-jira-blueLight text-jira-blue px-2.5 py-1 rounded font-medium">
+                    <i class="fas fa-paperclip"></i>
+                    <span>${escapeHTML(att.name)}</span>
+                    <button type="button" onclick="removeTempAttachment(${idx})" class="hover:text-jira-red ml-1"><i class="fas fa-times"></i></button>
+                </span>
+            `).join('');
+        }
+
+        // 이슈 생성 또는 수정 저장 처리
+        function CreateIssue() {
+            const summaryInput = document.getElementById('formSummary');
+            const summary = summaryInput.value.trim();
+
+            if (!summary) {
+                summaryInput.classList.add('border-jira-red', 'ring-2', 'ring-red-100');
+                summaryInput.focus();
+                showToast('필수 항목인 [요약 (Summary)]을 입력해 주세요.');
+                return;
+            }
+            summaryInput.classList.remove('border-jira-red', 'ring-2', 'ring-red-100');
+
+            const editingId = document.getElementById('editingIssueId').value;
+            const project = document.getElementById('formProject').value;
+            const type = document.getElementById('formType').value;
+            const description = document.getElementById('formDescription').value.trim() || '상세 설명이 입력되지 않았습니다.';
+            const severity = document.getElementById('formSeverity').value;
+            const priority = document.getElementById('formPriority').value;
+            const environment = document.getElementById('formEnvironment').value.trim() || 'Windows 11 / Build v1.0.4';
+            const assignee = document.getElementById('formAssignee').value;
+            const labelsRaw = document.getElementById('formLabels').value;
+            const labels = labelsRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+            if (editingId) {
+                // 기존 이슈 수정(Update) 모드
+                const issue = issues.find(i => i.id === editingId);
+                if (issue) {
+                    issue.type = type;
+                    issue.summary = summary;
+                    issue.description = description;
+                    issue.severity = severity;
+                    issue.priority = priority;
+                    issue.environment = environment;
+                    issue.assignee = assignee;
+                    issue.labels = labels;
+                    issue.attachments = [...tempAttachments];
+
+                    saveData();
+                    closeCreateModal();
+                    renderAll();
+                    openDetailModal(issue.id); // 수정 완료 후 상세 창을 다시 띄워줌
+                    showToast(`이슈 ${issue.id}가 수정되었습니다.`);
+                }
+            } else {
+                // 신규 생성(Create) 모드
+                const projectIssues = issues.filter(i => i.project === project);
+                let maxNum = 0;
+                projectIssues.forEach(i => {
+                    const parts = i.id.split('-');
+                    const num = parseInt(parts[parts.length - 1], 10);
+                    if (!isNaN(num) && num > maxNum) maxNum = num;
+                });
+                const newId = `${project}-${maxNum + 1}`;
+
+                const now = new Date();
+                const formattedDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+                const newIssue = {
+                    id: newId,
+                    project,
+                    type,
+                    summary,
+                    description,
+                    status: 'TODO',
+                    severity,
+                    priority,
+                    environment,
+                    assignee,
+                    reporter: 'QA 테스터 (나)',
+                    labels,
+                    attachments: [...tempAttachments],
+                    createdAt: formattedDate,
+                    comments: []
+                };
+
+                issues.unshift(newIssue);
+                saveData();
+                closeCreateModal();
+                
+                if (currentProjectKey !== 'ALL' && currentProjectKey !== project) {
+                    currentProjectKey = project;
+                    syncProjectSelectors();
+                }
+
+                renderAll();
+                showToast(`이슈 ${newId}가 성공적으로 등록되었습니다!`);
+            }
+        }
+
+        function handleCreateSubmit(e) {
+            e.preventDefault();
+            CreateIssue();
+        }
+
+        // =====================================================================
+        // 이슈 상세 모달 제어 (Issue Detail Modal)
+        // =====================================================================
+        function openDetailModal(issueId) {
+            selectedIssueId = issueId;
+            const issue = issues.find(i => i.id === issueId);
+            if (!issue) return;
+
+            document.getElementById('detailTypeIcon').innerHTML = getTypeIconHTML(issue.type);
+            document.getElementById('detailKey').textContent = issue.id;
+            document.getElementById('detailProjectBadge').textContent = `PROJECT-${issue.project}`;
+            document.getElementById('detailSummary').textContent = issue.summary;
+            document.getElementById('detailDescription').textContent = issue.description;
+            
+            document.getElementById('detailStatusSelect').value = issue.status;
+            document.getElementById('detailAssigneeSelect').value = issue.assignee;
+            document.getElementById('detailSeveritySelect').value = issue.severity;
+            document.getElementById('detailPrioritySelect').value = issue.priority;
+            document.getElementById('detailEnvironment').textContent = issue.environment;
+            document.getElementById('detailReporter').textContent = issue.reporter;
+            document.getElementById('detailCreatedAt').textContent = issue.createdAt;
+
+            const labelsEl = document.getElementById('detailLabels');
+            if (issue.labels && issue.labels.length > 0) {
+                labelsEl.innerHTML = issue.labels.map(l => `<span class="text-xs bg-jira-bg border border-jira-border text-jira-dark px-2 py-0.5 rounded">${escapeHTML(l)}</span>`).join('');
+            } else {
+                labelsEl.innerHTML = `<span class="text-xs text-jira-subtle">없음</span>`;
+            }
+
+            const attachSec = document.getElementById('detailAttachmentsSection');
+            const attachEl = document.getElementById('detailAttachments');
+            if (issue.attachments && issue.attachments.length > 0) {
+                attachSec.classList.remove('hidden');
+                attachEl.innerHTML = issue.attachments.map(att => {
+                    const fileName = typeof att === 'string' ? att : (att.name || '첨부파일');
+                    const fileUrl = typeof att === 'string' ? '#' : (att.url || '#');
+                    return `
+                        <a href="${escapeHTML(fileUrl)}" target="_blank" title="클릭하여 링크 열기" class="inline-flex items-center space-x-2 bg-jira-blueLight hover:bg-blue-200 border border-blue-200 px-3 py-2 rounded text-xs font-semibold text-jira-blue transition cursor-pointer">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>${escapeHTML(fileName)}</span>
+                        </a>
+                    `;
+                }).join('');
+            } else {
+                attachSec.classList.add('hidden');
+            }
+
+            renderComments(issue);
+            document.getElementById('detailModal').classList.remove('hidden');
+        }
+
+        function closeDetailModal() {
+            document.getElementById('detailModal').classList.add('hidden');
+            selectedIssueId = null;
+        }
+
+        function updateIssueField(field, value) {
+            if (!selectedIssueId) return;
+            const issue = issues.find(i => i.id === selectedIssueId);
+            if (issue) {
+                issue[field] = value;
+                saveData();
+                renderAll();
+                showToast(`${issue.id} 정보가 업데이트되었습니다.`);
+            }
+        }
+
+        function renderComments(issue) {
+            const listEl = document.getElementById('detailCommentsList');
+            const comments = issue.comments || [];
+
+            if (comments.length === 0) {
+                listEl.innerHTML = `<p class="text-xs text-jira-subtle text-center py-3">아직 등록된 댓글이 없습니다.</p>`;
+                return;
+            }
+
+            listEl.innerHTML = comments.map(c => `
+                <div class="flex space-x-3 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                    <div class="w-7 h-7 rounded-full bg-slate-600 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                        ${c.author.substring(0, 2)}
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-bold text-jira-dark">${escapeHTML(c.author)}</span>
+                            <span class="text-[11px] text-jira-subtle">${c.time}</span>
+                        </div>
+                        <p class="text-xs text-jira-dark leading-relaxed whitespace-pre-line">${escapeHTML(c.text)}</p>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function fillQuickComment(text) {
+            document.getElementById('newCommentInput').value = text;
+            document.getElementById('newCommentInput').focus();
+        }
+
+        function addComment() {
+            if (!selectedIssueId) return;
+            const input = document.getElementById('newCommentInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const issue = issues.find(i => i.id === selectedIssueId);
+            if (issue) {
+                const now = new Date();
+                const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+                
+                if (!issue.comments) issue.comments = [];
+                issue.comments.push({
+                    author: 'QA 테스터 (나)',
+                    text: text,
+                    time: timeStr
+                });
+
+                input.value = '';
+                saveData();
+                renderComments(issue);
+                renderAll();
+                showToast('검증 댓글이 등록되었습니다.');
+            }
+        }
+
+        function deleteCurrentIssue() {
+            if (!selectedIssueId) return;
+            openConfirmDialog(
+                '이슈 삭제 확인',
+                `정말 '${selectedIssueId}' 이슈를 삭제하시겠습니까? 삭제된 이슈는 복구할 수 없습니다.`,
+                () => {
+                    issues = issues.filter(i => i.id !== selectedIssueId);
+                    saveData();
+                    closeDetailModal();
+                    renderAll();
+                    showToast('이슈가 삭제되었습니다.');
+                }
+            );
+        }
+
+        // =====================================================================
+        // 데이터 백업(JSON 저장/불러오기), 초기화 & CSV 내보내기 유틸리티
+        // =====================================================================
+        function exportBackupJSON() {
+            const backupPayload = {
+                exportedAt: new Date().toISOString(),
+                projects: projects,
+                issues: issues
+            };
+            const dataStr = JSON.stringify(backupPayload, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            const dateTag = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `Jira_QA_포트폴리오_백업_${dateTag}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast('전체 프로젝트 및 이슈 데이터가 JSON 파일로 저장되었습니다!');
+        }
+
+        function importBackupJSON(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const parsed = JSON.parse(event.target.result);
+                    if (parsed.projects && Array.isArray(parsed.projects) && parsed.issues && Array.isArray(parsed.issues)) {
+                        projects = parsed.projects;
+                        issues = parsed.issues;
+                        issues.forEach(issue => {
+                            if (issue.attachments && issue.attachments.length > 0 && typeof issue.attachments[0] === 'string') {
+                                issue.attachments = issue.attachments.map(name => ({ name, url: '#' }));
+                            }
+                        });
+                        currentProjectKey = projects.length > 0 ? projects[0].key : 'ALL';
+                        saveData();
+                        syncProjectSelectors();
+                        renderAll();
+                        showToast('백업 파일에서 데이터가 성공적으로 복원되었습니다!');
+                    } else {
+                        showToast('올바른 Jira QA 백업 JSON 파일 형식이 아닙니다.');
+                    }
+                } catch (err) {
+                    showToast('백업 파일을 읽는 중 오류가 발생했습니다.');
+                }
+                e.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        function confirmResetData() {
+            openConfirmDialog(
+                '샘플 데이터 초기화',
+                '직접 만든 프로젝트와 이슈들을 모두 지우고 초기 샘플 데이터 상태로 되돌리시겠습니까?',
+                () => {
+                    projects = JSON.parse(JSON.stringify(DEFAULT_PROJECTS));
+                    issues = JSON.parse(JSON.stringify(DEFAULT_ISSUES));
+                    currentProjectKey = 'ALPHA';
+                    saveData();
+                    syncProjectSelectors();
+                    renderAll();
+                    showToast('초기 샘플 데이터로 복원되었습니다.');
+                }
+            );
+        }
+
+        function exportIssuesCSV() {
+            const targetIssues = getFilteredIssues();
+            const headers = ['이슈키', '프로젝트', '유형', '요약', '상태', '심각도', '우선순위', '담당자', '환경', '생성일'];
+            const rows = targetIssues.map(i => [
+                i.id, i.project, i.type, `"${i.summary.replace(/"/g, '""')}"`, i.status, i.severity, i.priority, i.assignee, `"${i.environment}"`, i.createdAt
+            ]);
+            
+            const csvText = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            
+            const textarea = document.createElement('textarea');
+            textarea.value = csvText;
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+                showToast(`현재 필터된 ${targetIssues.length}건의 이슈 목록이 CSV 형식으로 복사되었습니다!`);
+            } catch (err) {
+                showToast('복사에 실패했습니다.');
+            }
+            document.body.removeChild(textarea);
+        }
+
+        let dialogCallback = null;
+        function openConfirmDialog(title, message, onConfirm) {
+            document.getElementById('dialogTitle').textContent = title;
+            document.getElementById('dialogMessage').textContent = message;
+            dialogCallback = onConfirm;
+            document.getElementById('customDialog').classList.remove('hidden');
+        }
+
+        function closeDialog() {
+            document.getElementById('customDialog').classList.add('hidden');
+            dialogCallback = null;
+        }
+
+        document.getElementById('dialogConfirmBtn').addEventListener('click', () => {
+            if (dialogCallback) dialogCallback();
+            closeDialog();
+        });
+
+        function showToast(message) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'bg-jira-dark text-white text-xs font-medium px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 modal-animate';
+            toast.innerHTML = `<i class="fas fa-check-circle text-green-400"></i><span>${escapeHTML(message)}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transition = 'opacity 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+    </script>
+</body>
+</html>
